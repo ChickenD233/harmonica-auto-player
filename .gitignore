@@ -1,0 +1,14 @@
+# ---------- 构建产物 ----------
+**/bin/
+**/obj/
+
+# ---------- 本地工具链 / 缓存（.NET SDK、NuGet） ----------
+.tools/
+
+# ---------- 系统文件 ----------
+**/.DS_Store
+
+# ---------- 发布目录：只保留 Windows 成品 zip ----------
+release/win-x64/
+release/*.zip
+!release/HarpAutoPlayer-win-x64.zip

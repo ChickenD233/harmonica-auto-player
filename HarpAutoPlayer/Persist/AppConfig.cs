@@ -14,6 +14,7 @@ public sealed class AppConfig
     public bool Breath { get; set; } = false;
     public bool VocalExtract { get; set; } = false;   // 人声旋律提取（伴奏混同轨时）
     public bool TrimLead { get; set; } = true;        // 去除开头空拍（首音平移到 0 秒）
+    public bool FirstRunDone { get; set; } = false;   // 首次“快速上手”是否已看过
 
     private static string DirPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HarpAutoPlayer");
@@ -22,12 +23,18 @@ public sealed class AppConfig
 
     public static AppConfig Load()
     {
+        bool existed = File.Exists(FilePath);
         try
         {
-            if (File.Exists(FilePath))
+            if (existed)
             {
                 var cfg = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(FilePath));
-                if (cfg != null) return cfg;
+                if (cfg != null)
+                {
+                    // 老用户升级：设置文件已存在就不算“首次”，不弹快速上手
+                    cfg.FirstRunDone = true;
+                    return cfg;
+                }
             }
         }
         catch { /* 配置损坏则用默认 */ }

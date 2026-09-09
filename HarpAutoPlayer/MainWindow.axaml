@@ -3,8 +3,8 @@
         xmlns:local="clr-namespace:HarpAutoPlayer"
         x:Class="HarpAutoPlayer.MainWindow"
         Title="口琴自动演奏器（三角洲行动）"
-        Width="1000" Height="660"
-        MinWidth="900" MinHeight="560"
+        Width="1080" Height="680"
+        MinWidth="980" MinHeight="580"
         WindowStartupLocation="CenterScreen"
         Background="#F3F4F6"
         FontFamily="Microsoft YaHei UI,微软雅黑,Segoe UI"
@@ -49,7 +49,10 @@
     </Style>
   </Window.Styles>
 
-  <DockPanel Margin="14">
+  <Grid>
+
+    <!-- ============ 主界面（左：文件/轨道；右：演奏控制） ============ -->
+    <DockPanel Margin="14">
 
     <!-- ============ 底部免责声明（点击可关闭） ============ -->
     <Border DockPanel.Dock="Bottom" Margin="0,10,0,0" Background="#FDEBEA"
@@ -65,7 +68,7 @@
     </Border>
 
     <!-- ================= 左栏：文件 → 轨道 ================= -->
-    <Grid Width="400" RowDefinitions="Auto,*" DockPanel.Dock="Left" Margin="0,0,12,0">
+    <Grid Width="440" RowDefinitions="Auto,*" DockPanel.Dock="Left" Margin="0,0,12,0">
 
       <Border Grid.Row="0" Classes="card">
         <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
@@ -81,7 +84,7 @@
 
       <Border Grid.Row="1" Classes="card" Margin="0,10,0,0">
         <Grid RowDefinitions="Auto,*">
-          <Grid ColumnDefinitions="22,24,30,62,*,52,82" Background="#F7F8FA">
+          <Grid ColumnDefinitions="22,24,28,62,*,56,42,70" Background="#F7F8FA">
             <TextBlock Text="" FontSize="11"/>
             <TextBlock Grid.Column="1" Text="合" FontSize="11" Foreground="#5B616B"
                        Padding="2,7" FontWeight="SemiBold"
@@ -92,17 +95,25 @@
                        Padding="4,7" FontWeight="SemiBold"/>
             <TextBlock Grid.Column="4" Text="名称" FontSize="11" Foreground="#5B616B"
                        Padding="4,7" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="5" Text="音符" FontSize="11" Foreground="#5B616B"
+            <TextBlock Grid.Column="5" Text="时长" FontSize="11" Foreground="#5B616B"
                        Padding="4,7" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="6" Text="音域" FontSize="11" Foreground="#5B616B"
+            <TextBlock Grid.Column="6" Text="音符" FontSize="11" Foreground="#5B616B"
+                       Padding="4,7" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="7" Text="音域" FontSize="11" Foreground="#5B616B"
                        Padding="4,7" FontWeight="SemiBold"/>
           </Grid>
           <Grid Grid.Row="1">
             <ListBox x:Name="TrackList" SelectionMode="Single" Background="Transparent"
                      SelectionChanged="TrackList_SelectionChanged">
+              <ListBox.Styles>
+                <!-- 打击乐等不适合口琴的轨道：整行禁用（不可点选、合奏勾选禁用） -->
+                <Style Selector="ListBoxItem">
+                  <Setter Property="IsEnabled" Value="{Binding IsPlayable}"/>
+                </Style>
+              </ListBox.Styles>
               <ListBox.ItemTemplate>
                 <DataTemplate>
-                  <Grid ColumnDefinitions="22,24,30,62,*,52,82" MinHeight="28">
+                  <Grid ColumnDefinitions="22,24,28,62,*,56,42,70" MinHeight="28">
                     <TextBlock Text="{Binding MixRank}" FontSize="10" Foreground="#1F6FB2"
                                FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"
                                IsVisible="{Binding IsMix}"/>
@@ -117,12 +128,15 @@
                                Padding="4,3" FontSize="12"/>
                     <TextBlock Grid.Column="3" Text="{Binding ChannelLabel}" VerticalAlignment="Center"
                                Padding="4,3" FontSize="12"/>
-                    <TextBlock Grid.Column="4" Text="{Binding Name}" VerticalAlignment="Center"
+                    <TextBlock Grid.Column="4" Text="{Binding DisplayName}" VerticalAlignment="Center"
                                Padding="4,3" FontSize="12" TextTrimming="CharacterEllipsis"
-                               ToolTip.Tip="{Binding Name}"/>
-                    <TextBlock Grid.Column="5" Text="{Binding NoteCount}" VerticalAlignment="Center"
+                               FontWeight="{Binding NameWeight}"
+                               ToolTip.Tip="{Binding DisplayName}"/>
+                    <TextBlock Grid.Column="5" Text="{Binding DurationText}" VerticalAlignment="Center"
+                               Padding="4,3" FontSize="11" Foreground="#8A8F98"/>
+                    <TextBlock Grid.Column="6" Text="{Binding NoteCount}" VerticalAlignment="Center"
                                Padding="4,3" FontSize="12" HorizontalAlignment="Center"/>
-                    <TextBlock Grid.Column="6" Text="{Binding RangeLabel}" VerticalAlignment="Center"
+                    <TextBlock Grid.Column="7" Text="{Binding RangeLabel}" VerticalAlignment="Center"
                                Padding="4,3" FontSize="12"/>
                   </Grid>
                 </DataTemplate>
@@ -152,7 +166,7 @@
       <Border Grid.Row="2" Classes="card" Margin="0,10,0,0">
         <Grid ColumnDefinitions="Auto,*,Auto">
           <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-            <Button x:Name="BtnPlay" Content="▶ 播放" Click="BtnPlay_Click"
+            <Button x:Name="BtnPlay" Content="▶ 播放 (F5)" Click="BtnPlay_Click"
                     Classes="accent" FontSize="15" Padding="20,8" IsEnabled="False"/>
             <Button x:Name="BtnStop" Content="■ 停止" Click="BtnStop_Click"
                     FontSize="15" Padding="20,8" IsEnabled="False"/>
@@ -164,6 +178,8 @@
             <TextBlock Grid.Column="1" x:Name="TxtTime" VerticalAlignment="Center"
                        Text="0.0 / 0.0 s" FontSize="12" Foreground="#8A8F98"/>
           </Grid>
+          <TextBlock Grid.Column="2" x:Name="TxtHotHint" VerticalAlignment="Center" Margin="12,0,0,0"
+                     Text="F5 开始 · F6 暂停" FontSize="11" Foreground="#8A8F98"/>
         </Grid>
       </Border>
 
@@ -226,4 +242,37 @@
       </Border>
     </Grid>
   </DockPanel>
+
+  <!-- ============ 首次启动“快速上手”浮层（点“我知道了”后不再弹出） ============ -->
+  <Border x:Name="QuickStartOverlay" IsVisible="False" Background="#CCEAEFF5" CornerRadius="0">
+    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="580" Margin="24">
+      <Border Classes="card" Padding="24,20">
+        <StackPanel Spacing="9">
+          <TextBlock Text="快速上手（第一次使用，之后不再弹出）" FontSize="18" FontWeight="Bold"/>
+          <TextBlock TextWrapping="Wrap" FontSize="13.5" LineHeight="21">
+            <Run FontWeight="Bold" Text="① 打开 MIDI"/><Run Text="：点「打开 MIDI 文件」，程序会替你选好一条推荐的主旋律轨（绿点标出）；歌曲有多条声部时想换就点其它行；"/>
+          </TextBlock>
+          <TextBlock TextWrapping="Wrap" FontSize="13.5" LineHeight="21">
+            <Run FontWeight="Bold" Text="② 开始"/><Run Text="：点「▶ 播放」(或按 F5)，看清大号倒计时，在结束前切换到游戏并装备口琴即可自动吹奏；"/>
+          </TextBlock>
+          <TextBlock TextWrapping="Wrap" FontSize="13.5" LineHeight="21">
+            <Run FontWeight="Bold" Text="③ 暂停 / 继续"/><Run Text="：游戏中随时按 F6；播放中点「▶ 播放」按钮也会变成「⏸ 暂停」。"/>
+          </TextBlock>
+          <Border Background="#F7F8FA" CornerRadius="6" Padding="13,9" Margin="0,4,0,0">
+            <StackPanel Spacing="4">
+              <TextBlock Text="几个易踩的坑：" FontWeight="Bold" FontSize="13" Foreground="#B25A00"/>
+              <TextBlock Text="· 游戏用窗口化或无边框窗口化，不要用全屏独占" FontSize="13"/>
+              <TextBlock Text="· 输入法切到英文；游戏内人物请原地站好再开始" FontSize="13"/>
+              <TextBlock Text="· 没反应时先点一下游戏画面；游戏以管理员运行时，本程序也要以管理员运行" FontSize="13"/>
+              <TextBlock Text="· 想先验证按键对不对：可打开仓库里的 口琴钢琴测试台.html" FontSize="13"/>
+            </StackPanel>
+          </Border>
+          <Button x:Name="BtnQuickStartOk" Content="我知道了，开始使用" Classes="accent"
+                  HorizontalAlignment="Right" Padding="18,8" FontSize="14.5" Margin="0,6,0,0"
+                  Click="QuickStartOk_Click"/>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </Border>
+</Grid>
 </Window>

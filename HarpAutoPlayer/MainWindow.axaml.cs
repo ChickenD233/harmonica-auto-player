@@ -106,6 +106,8 @@ public partial class MainWindow : Window
 
         UpdateSettingLabels();
         RefreshPreview();
+        SetIdleHint();
+        UpdateTransportUi();
 
         InsertLog("欢迎使用 口琴自动演奏器（三角洲行动）");
         InsertLog("用法：打开 MIDI 文件 → 在左侧单击一行作为主旋律 → 点「播放」（或按开始热键 F5），倒计时内切到游戏并装备口琴即可。");
@@ -114,6 +116,25 @@ public partial class MainWindow : Window
         {
             SetupTray();
             Opened += (_, _) => EnsureTray();
+        }
+        Opened += (_, _) => ShowQuickStartOnce();
+    }
+
+    // ================= 首次启动“快速上手” =================
+
+    private void ShowQuickStartOnce()
+    {
+        if (_cfg == null || _cfg.FirstRunDone || QuickStartOverlay == null) return;
+        QuickStartOverlay.IsVisible = true;
+    }
+
+    private void QuickStartOk_Click(object? sender, RoutedEventArgs e)
+    {
+        if (QuickStartOverlay != null) QuickStartOverlay.IsVisible = false;
+        if (_cfg != null)
+        {
+            _cfg.FirstRunDone = true;
+            _cfg.Save();
         }
     }
 
@@ -173,8 +194,10 @@ public partial class MainWindow : Window
             {
                 eng.Resume();
                 LblStatus.Foreground = Avalonia.Media.Brushes.SeaGreen;
+                LblStatus.FontSize = 21;
                 LblStatus.Text = "演奏中…";
                 InsertLog("已继续播放（热键）。");
+                UpdateTransportUi();
             }
             else
             {
@@ -202,14 +225,47 @@ public partial class MainWindow : Window
         {
             eng.Resume();
             LblStatus.Foreground = Avalonia.Media.Brushes.SeaGreen;
+            LblStatus.FontSize = 21;
             LblStatus.Text = "演奏中…";
         }
         else
         {
             eng.Pause();
             LblStatus.Foreground = Avalonia.Media.Brushes.Crimson;
-            LblStatus.Text = "已暂停 —— 再按暂停热键继续";
+            LblStatus.Text = "已暂停 —— 按 F6 或点「▶ 继续」重新开始";
         }
+        UpdateTransportUi();
+    }
+
+    // ================= 状态区 / 按钮提示 =================
+
+    /// <summary>空闲时的状态区提示（人话，不是干巴巴的空白）。</summary>
+    private void SetIdleHint()
+    {
+        LblStatus.Foreground = Avalonia.Media.Brushes.Gray;
+        LblStatus.FontSize = 15;
+        LblStatus.Text = "打开 MIDI 并点选主旋律 → 按 F5 或点 ▶ 播放；游戏中随时按 F6 暂停";
+    }
+
+    /// <summary>
+    /// 按当前状态统一播放按钮与热键提示：
+    /// 空闲=▶播放(F5)；播放中=⏸暂停；暂停中=▶继续。停止按钮倒计时里可用。
+    /// </summary>
+    private void UpdateTransportUi()
+    {
+        var eng = _engine;
+        if (eng is { IsRunning: true })
+        {
+            BtnPlay.IsEnabled = true;
+            BtnStop.IsEnabled = true;
+            BtnPlay.Content = eng.IsPaused ? "▶ 继续" : "⏸ 暂停";
+            TxtHotHint.Text = eng.IsPaused ? "F5 / F6 继续" : "F6 暂停";
+            return;
+        }
+        BtnPlay.Content = "▶ 播放 (F5)";
+        BtnStop.IsEnabled = _busy;   // 倒计时中允许点停止取消
+        BtnPlay.IsEnabled = !_busy && ActiveRows().Count > 0 && BuildMapping().InRangeCount > 0;
+        TxtHotHint.Text = "F5 开始 · F6 暂停";
     }
 
     // ================= 日志 / 设置持久化 =================
@@ -378,9 +434,10 @@ public partial class MainWindow : Window
                 foreach (var c in parsed.Candidates) _tracks.Add(new TrackRowVM(c));
 
                 LblFile.Text = System.IO.Path.GetFileName(path);
-                InsertLog($"已载入 {System.IO.Path.GetFileName(path)}：{parsed.Candidates.Count} 个候选，时长 ≈ {parsed.DurationSec:F1}s，请在左侧点选一行作为主旋律");
+                InsertLog($"已载入 {System.IO.Path.GetFileName(path)}：{parsed.Candidates.Count} 个候选，时长 ≈ {parsed.DurationSec:F1}s");
 
                 _selected = null;
+                ChooseRecommendedTrack();
                 RefreshPreview();
             }
             catch (Exception ex)
@@ -403,6 +460,79 @@ public partial class MainWindow : Window
     }
 
     // ================= 主旋律选择 =================
+
+    /// <summary>
+    /// 载入后自动挑一条最像主旋律的轨并选中（人不满意可再点其它行）。
+    /// 依据：非打击乐、轨道名像旋律（旋律/人声/主唱/Lead…）、音域贴合口琴。
+    /// </summary>
+    private void ChooseRecommendedTrack()
+    {
+        TrackRowVM? best = null;
+        double bestScore = double.MinValue;
+        foreach (var r in _tracks)
+        {
+            if (!r.IsPlayable) continue;
+            double s = ScoreCandidate(r);
+            if (s > bestScore)
+            {
+                bestScore = s;
+                best = r;
+            }
+        }
+        if (best == null)
+        {
+            InsertLog("没有找到适合口琴的旋律轨（全是打击乐？），请手动点选一行试试。");
+            return;
+        }
+
+        best.IsRecommended = true;
+        TrackList.SelectedItem = best;   // 触发 SelectionChanged → SetMain → 高亮
+        if (bestScore >= 20)
+            InsertLog($"已自动选中推荐轨：{best.DisplayName}（非打击乐、最像旋律、音域贴合；想换就点其它行）。");
+        else
+            InsertLog($"已自动选中较合适的轨：{best.DisplayName}（音域贴合的不多，可再用「一键移调」调整）。");
+    }
+
+    private double ScoreCandidate(TrackRowVM r)
+    {
+        string name = r.Candidate.Name;
+        double s = 0;
+
+        // 轨道名像“旋律”的加分
+        string[] melodyHints =
+            { "旋律", "主旋律", "主唱", "人声", "女声", "男声", "独奏", "主音",
+              "lead", "melod", "vocal", "vox", "solo", "sing" };
+        foreach (var kw in melodyHints)
+        {
+            if (name.Contains(kw, StringComparison.OrdinalIgnoreCase))
+            {
+                s += 45;
+                break;
+            }
+        }
+        // 明显是伴奏/低音/吉他的减分
+        string[] accompHints =
+            { "伴奏", "和声", "和弦", "低音", "吉他", "钢琴伴", "节奏",
+              "bass", "chord", "back", "guitar", "pad", "rhythm", "fx" };
+        foreach (var kw in accompHints)
+        {
+            if (name.Contains(kw, StringComparison.OrdinalIgnoreCase))
+            {
+                s -= 35;
+                break;
+            }
+        }
+
+        var notes = r.Candidate.Notes;
+        if (notes.Count > 0)
+        {
+            var map = NoteMapper.Map(notes, 0, null);
+            s += 30.0 * map.InRangeCount / notes.Count;   // 音域贴合度（不抢先于名字线索）
+            if (notes.Count < 8) s -= 20;                  // 太碎不像是能吹的歌
+            s += Math.Min(notes.Count / 50.0, 8.0);        // 稍偏好完整曲目轨
+        }
+        return s;
+    }
 
     private void TrackList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
@@ -557,7 +687,7 @@ public partial class MainWindow : Window
                 : "已载入文件 —— 单击一行作为主旋律；勾选“合”可按 1、2、3 优先级把多个声部一起吹。";
             LblWarn.Text = "";
             LblWarn.Foreground = warnColor;
-            UpdatePlayButton();
+            UpdateTransportUi();
             return;
         }
 
@@ -591,17 +721,21 @@ public partial class MainWindow : Window
             LblWarn.Text = "全部音都在可演奏音域内，可直接演奏。";
             LblWarn.Foreground = okColor;
         }
-        UpdatePlayButton();
-    }
-
-    private void UpdatePlayButton()
-    {
-        BtnPlay.IsEnabled = !_busy && ActiveRows().Count > 0 && BuildMapping().InRangeCount > 0;
+        UpdateTransportUi();
     }
 
     // ================= 播放 =================
 
-    private void BtnPlay_Click(object? sender, RoutedEventArgs e) => RequestPlay();
+    private void BtnPlay_Click(object? sender, RoutedEventArgs e)
+    {
+        // ▶ 播放 / ⏸ 暂停 二合一：播放中点它=暂停，暂停中点它=继续
+        if (_engine is { IsRunning: true })
+        {
+            TogglePause();
+            return;
+        }
+        RequestPlay();
+    }
 
     private void RequestPlay()
     {
@@ -658,7 +792,16 @@ public partial class MainWindow : Window
     private void UpdateCountdownText()
     {
         LblStatus.Foreground = Avalonia.Media.Brushes.Crimson;
-        LblStatus.Text = $"{_countdownLeft} 秒后开始 —— 请切到游戏并装备口琴";
+        LblStatus.FontSize = 38;   // 切游戏前的最后几秒必须一眼看到
+        LblStatus.Text = $"{_countdownLeft} 秒后开始 —— 请切到游戏并装备口琴（F6 可随时暂停）";
+        SetCountdownChrome(true);
+    }
+
+    /// <summary>倒计时期间窗口底色轻微变暖做提醒，结束时恢复原色。</summary>
+    private void SetCountdownChrome(bool on)
+    {
+        Background = new Avalonia.Media.SolidColorBrush(
+            Avalonia.Media.Color.Parse(on ? "#FFF3E4D8" : "#F3F4F6"));
     }
 
     private void StartPlayback()
@@ -687,13 +830,15 @@ public partial class MainWindow : Window
         string fgTitle = Input.InputSender.ForegroundWindowTitle;
         InsertLog($"开始吹奏；当前前台窗口：{(string.IsNullOrEmpty(fgTitle) ? "（读不到，可能未切到游戏）" : fgTitle)}");
         LblStatus.Foreground = Avalonia.Media.Brushes.SeaGreen;
+        LblStatus.FontSize = 21;
+        SetCountdownChrome(false);
         LblStatus.Text = "演奏中…";
 
         // 开始吹奏后自动最小化，方便直接操作游戏（托盘可随时控制）
         if (WindowState != WindowState.Minimized)
             WindowState = WindowState.Minimized;
 
-        BtnStop.IsEnabled = true;
+        UpdateTransportUi();
         SliderProgress.IsEnabled = true;
 
         _uiTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
@@ -767,7 +912,9 @@ public partial class MainWindow : Window
         SliderProgress.Value = 0;
         SliderProgress.IsEnabled = false;
         TxtTime.Text = "0.0 / 0.0 s";
-        LblStatus.Text = "";
+        LblStatus.FontSize = 21;
+        SetCountdownChrome(false);
+        SetIdleHint();
     }
 
     private void SetBusy(bool busy)
@@ -782,8 +929,7 @@ public partial class MainWindow : Window
         ChkTrimLead.IsEnabled = !busy;
         CountdownCombo.IsEnabled = !busy;
         BtnAutoTranspose.IsEnabled = !busy;
-        BtnStop.IsEnabled = busy;
-        UpdatePlayButton();
+        UpdateTransportUi();
         // 速度 / 移调两个滑条：空闲与播放中都可调（播放中实时生效）
         SliderSpeed.IsEnabled = true;
         SliderTranspose.IsEnabled = true;

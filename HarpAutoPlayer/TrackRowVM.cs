@@ -10,6 +10,7 @@ public sealed class TrackRowVM : INotifyPropertyChanged
     private bool _isMain;
     private bool _isMix;
     private int _mixRank;
+    private bool _isRecommended;
 
     public TrackRowVM(MidiCandidate candidate)
     {
@@ -63,7 +64,52 @@ public sealed class TrackRowVM : INotifyPropertyChanged
     public string Name => Candidate.Name;
     public int NoteCount => Candidate.NoteCount;
     public string RangeLabel => Candidate.RangeLabel;
-    public string DurationText => $"{Candidate.DurationSec:F1}s";
+
+    /// <summary>时长的人话格式：不足 1 分钟显示秒，否则 分:秒。</summary>
+    public string DurationText
+    {
+        get
+        {
+            double d = Candidate.DurationSec;
+            if (d < 1) return "—";
+            if (d < 60) return $"{d:F0}秒";
+            int m = (int)(d / 60);
+            int s = (int)d % 60;
+            return $"{m}分{s:00}秒";
+        }
+    }
+
+    /// <summary>打击乐等不适合作为口琴主旋律的轨道。</summary>
+    public bool IsPercussion =>
+        Candidate.Channel == 9 ||
+        Candidate.Name.Contains("打击", StringComparison.OrdinalIgnoreCase) ||
+        Candidate.Name.Contains("鼓", StringComparison.OrdinalIgnoreCase) ||
+        Candidate.Name.Contains("drum", StringComparison.OrdinalIgnoreCase) ||
+        Candidate.Name.Contains("percussion", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>是否可被选作主旋律（打击乐整行禁用）。</summary>
+    public bool IsPlayable => !IsPercussion;
+
+    /// <summary>载入时被自动推荐为主旋律轨。</summary>
+    public bool IsRecommended
+    {
+        get => _isRecommended;
+        set
+        {
+            if (_isRecommended == value) return;
+            _isRecommended = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(DisplayName));
+            OnPropertyChanged(nameof(NameWeight));
+        }
+    }
+
+    /// <summary>名称列显示：推荐轨带 ★ 标记。</summary>
+    public string DisplayName => IsRecommended ? Name + " ★推荐" : Name;
+
+    /// <summary>推荐轨加粗显示。</summary>
+    public Avalonia.Media.FontWeight NameWeight =>
+        IsRecommended ? Avalonia.Media.FontWeight.SemiBold : Avalonia.Media.FontWeight.Normal;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

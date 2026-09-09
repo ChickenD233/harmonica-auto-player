@@ -95,16 +95,6 @@
 └── README.md
 ```
 
-## 从源码构建（可选）
-
-需要 [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)：
-
-```bash
-dotnet publish HarpAutoPlayer/HarpAutoPlayer.csproj -c Release -r win-x64 --self-contained true -o release/win-x64
-```
-
-macOS / Linux 上可直接运行 `HarpAutoPlayer/build-win.sh` 交叉发布并打成 zip。
-
 ## 技术说明
 
 - UI：Avalonia（.NET 8）；MIDI 解析：DryWetMidi（支持 UTF-8 轨道名）；

@@ -13,6 +13,7 @@ public sealed class AppConfig
     public bool ChordRoot { get; set; } = true;
     public bool Breath { get; set; } = false;
     public bool VocalExtract { get; set; } = false;   // 人声旋律提取（伴奏混同轨时）
+    public bool TrimLead { get; set; } = true;        // 去除开头空拍（首音平移到 0 秒）
 
     private static string DirPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HarpAutoPlayer");

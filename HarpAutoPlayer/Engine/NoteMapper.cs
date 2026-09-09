@@ -365,6 +365,27 @@ public static class NoteMapper
         return result.OrderBy(n => n.Start).ToList();
     }
 
+    /// <summary>
+    /// 去除开头的整段空拍（休止/空白）：把整条旋律整体平移到第一个音符从 0 秒开始，
+    /// 音符之间的相对时值不变。很多 MIDI 在真正开始前有几小节休止，
+    /// 剪掉后点「播放」就能立刻出音，不用先干等几秒。
+    /// 若开头本来就没有空拍（首音 ≈0s）则原样返回。
+    /// </summary>
+    public static List<RawNote> TrimLeadingSilence(IReadOnlyList<RawNote> notes)
+    {
+        if (notes.Count == 0) return new List<RawNote>();
+        double first = notes.Min(n => n.Start);
+        if (first <= 0.001) return notes.ToList();
+
+        return notes.Select(n => new RawNote
+        {
+            Pitch = n.Pitch,
+            Start = Math.Max(0, n.Start - first),
+            End = Math.Max(0, n.End - first),
+            Velocity = n.Velocity
+        }).ToList();
+    }
+
     /// <summary>给界面用的单音描述。</summary>
     public static string Describe(MappedNote n, bool withTime)
     {

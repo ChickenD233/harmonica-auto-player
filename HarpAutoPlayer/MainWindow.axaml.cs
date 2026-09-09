@@ -35,6 +35,7 @@ public partial class MainWindow : Window
     private bool _seeking;          // 用户正在拖进度条
     private bool _liveQueued;       // 已排队待应用的实时移调
     private IntPtr _gameHwnd;       // 播放期间记住的游戏窗口（用于停止时把焦点还给它）
+    private double _removedLeadSec; // “去除开头空拍”实际剪掉的秒数（本轮）
     private readonly AppConfig _cfg;
     private TrayIcon? _tray;
     private bool _quitNow;
@@ -71,6 +72,7 @@ public partial class MainWindow : Window
         ChkChordRoot.IsChecked = _cfg.ChordRoot;
         ChkBreath.IsChecked = _cfg.Breath;
         ChkVocalExtract.IsChecked = _cfg.VocalExtract;
+        ChkTrimLead.IsChecked = _cfg.TrimLead;
 
         _saveDeb = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
         _saveDeb.Tick += (_, _) =>
@@ -239,6 +241,7 @@ public partial class MainWindow : Window
         _cfg.ChordRoot = ChkChordRoot.IsChecked == true;
         _cfg.Breath = ChkBreath.IsChecked == true;
         _cfg.VocalExtract = ChkVocalExtract.IsChecked == true;
+        _cfg.TrimLead = ChkTrimLead.IsChecked == true;
         _cfg.Save();
     }
 
@@ -430,7 +433,11 @@ public partial class MainWindow : Window
     private List<RawNote> GetActiveRawNotes()
     {
         var rows = ActiveRows();
-        if (rows.Count == 0) return new List<RawNote>();
+        if (rows.Count == 0)
+        {
+            _removedLeadSec = 0;
+            return new List<RawNote>();
+        }
         var voices = new List<(int Rank, RawNote Note)>();
         for (int k = 0; k < rows.Count; k++)
         {
@@ -441,7 +448,21 @@ public partial class MainWindow : Window
                 rowNotes = NoteMapper.ChordRootOnly(rowNotes);         // 同刻取最高
             foreach (var n in rowNotes) voices.Add((k + 1, n));  // 1 最优先
         }
-        return NoteMapper.MergeVoicesByPriority(voices);
+        var merged = NoteMapper.MergeVoicesByPriority(voices);
+
+        // “去除开头空拍”：把整条旋律平移到第一个音从 0 秒开始（MIDI 开头常有几小节休止）
+        if (ChkTrimLead.IsChecked == true)
+        {
+            double before = merged.Count == 0 ? 0 : merged.Min(n => n.Start);
+            merged = NoteMapper.TrimLeadingSilence(merged);
+            double after = merged.Count == 0 ? 0 : merged.Min(n => n.Start);
+            _removedLeadSec = Math.Max(0, before - after);
+        }
+        else
+        {
+            _removedLeadSec = 0;
+        }
+        return merged;
     }
 
     private MappingResult MapAt(int transpose) =>
@@ -510,7 +531,7 @@ public partial class MainWindow : Window
         RefreshPreview();   // 立即刷新，勾完即可播放
     }
 
-    private void Chord_Changed(object? sender, RoutedEventArgs e)
+    private void Option_Changed(object? sender, RoutedEventArgs e)
     {
         ScheduleSave();
         if (_busy || _previewDeb is null) return;
@@ -644,6 +665,9 @@ public partial class MainWindow : Window
     {
         if (_playNotes.Count == 0) return;
 
+        if (_removedLeadSec > 0.05)
+            InsertLog($"已去除开头空拍 {_removedLeadSec:F1} 秒（“去除开头空拍”勾选生效），旋律将从第 0 秒开始。");
+
         var engine = new PlaybackEngine();
         _engine = engine;
         engine.Log += s => UiPost(() => InsertLog(s));
@@ -755,6 +779,7 @@ public partial class MainWindow : Window
         ChkChordRoot.IsEnabled = !busy;
         ChkBreath.IsEnabled = !busy;
         ChkVocalExtract.IsEnabled = !busy;
+        ChkTrimLead.IsEnabled = !busy;
         CountdownCombo.IsEnabled = !busy;
         BtnAutoTranspose.IsEnabled = !busy;
         BtnStop.IsEnabled = busy;

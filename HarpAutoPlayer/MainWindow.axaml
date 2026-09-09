@@ -206,14 +206,18 @@
           <CheckBox x:Name="ChkChordRoot" Content="同刻多音取最高（还原主旋律）" FontSize="13"
                     IsChecked="True" VerticalAlignment="Center" Margin="0,0,24,4"
                     ToolTip.Tip="口琴一次只能吹一个音：多个音同时响时吹最高的那个——主旋律通常在最高声部，尽量贴近原曲"
-                    IsCheckedChanged="Chord_Changed"/>
+                    IsCheckedChanged="Option_Changed"/>
           <CheckBox x:Name="ChkVocalExtract" Content="人声旋律提取" FontSize="13"
                     IsChecked="False" VerticalAlignment="Center" Margin="0,0,24,4"
                     ToolTip.Tip="伴奏与主唱混在同一轨时用：只在人声音区里取音并保持旋律连续，过滤低音/和声伴奏"
-                    IsCheckedChanged="Chord_Changed"/>
+                    IsCheckedChanged="Option_Changed"/>
           <CheckBox x:Name="ChkBreath" Content="呼吸休止" FontSize="13"
-                    IsChecked="False" VerticalAlignment="Center" Margin="0,0,0,4"
+                    IsChecked="False" VerticalAlignment="Center" Margin="0,0,24,4"
                     IsCheckedChanged="Breath_Changed"/>
+          <CheckBox x:Name="ChkTrimLead" Content="去除开头空拍" FontSize="13"
+                    IsChecked="True" VerticalAlignment="Center" Margin="0,0,0,4"
+                    ToolTip.Tip="很多 MIDI 开头有几小节休止/空白：勾选后自动把起始静音剪掉，让旋律从第 0 秒直接开始"
+                    IsCheckedChanged="Option_Changed"/>
         </WrapPanel>
       </Border>
 

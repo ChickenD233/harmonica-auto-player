@@ -54,19 +54,16 @@ public partial class MainWindow : Window
         CountdownCombo.ItemsSource = new List<string> { "0秒(立即)", "3秒", "5秒", "10秒" };
         CountdownCombo.SelectedIndex = 1;
 
-        // 全局热键下拉：F1..F12（默认 开始=F5、暂停/继续=F6）
+        // 统一控制热键下拉：F1..F12（默认 F6 = 开始/暂停/继续）
         var fkeys = new List<string> { "无" };
         for (int i = 1; i <= 12; i++) fkeys.Add("F" + i);
-        HotkeyStartCombo.ItemsSource = fkeys;
-        HotkeyStartCombo.SelectedIndex = 5;   // F5
-        HotkeyPauseCombo.ItemsSource = fkeys;
-        HotkeyPauseCombo.SelectedIndex = 6;   // F6
+        HotkeyControlCombo.ItemsSource = fkeys;
+        HotkeyControlCombo.SelectedIndex = 6;   // F6
 
         // —— 记住上次设置 ——
         _cfg = AppConfig.Load();
         CountdownCombo.SelectedIndex = Math.Clamp(_cfg.CountdownIndex, 0, 3);
-        HotkeyStartCombo.SelectedIndex = Math.Clamp(_cfg.StartHotkeyIndex, 0, 12);
-        HotkeyPauseCombo.SelectedIndex = Math.Clamp(_cfg.PauseHotkeyIndex, 0, 12);
+        HotkeyControlCombo.SelectedIndex = Math.Clamp(_cfg.ControlHotkeyIndex, 0, 12);
         SliderSpeed.Value = Math.Clamp(_cfg.Speed, 50, 200);
         SliderTranspose.Value = Math.Clamp(_cfg.Transpose, -10, 10);
         ChkChordRoot.IsChecked = _cfg.ChordRoot;
@@ -110,8 +107,8 @@ public partial class MainWindow : Window
         UpdateTransportUi();
 
         InsertLog("欢迎使用 口琴自动演奏器（三角洲行动）");
-        InsertLog("用法：打开 MIDI 文件 → 在左侧单击一行作为主旋律 → 点「播放」（或按开始热键 F5），倒计时内切到游戏并装备口琴即可。");
-        InsertLog("热键：F5=开始/继续，F6=暂停/继续（游戏中也直接生效，可在设置里改）。");
+        InsertLog("用法：打开 MIDI 文件 → 在左侧单击一行作为主旋律 → 按 F6（或点「▶ 播放」），倒计时内切到游戏并装备口琴即可。");
+        InsertLog("控制热键：F6 = 空闲开始 / 播放暂停 / 暂停继续（游戏中直接生效，可在“控制热键”里改）。");
         if (OperatingSystem.IsWindows())
         {
             SetupTray();
@@ -154,13 +151,9 @@ public partial class MainWindow : Window
 
     private void ReconfigureHotkeys()
     {
-        int startIdx = Math.Max(0, HotkeyStartCombo.SelectedIndex);
-        int pauseIdx = Math.Max(0, HotkeyPauseCombo.SelectedIndex);
-        int startCode = startIdx > 0 ? Input.GlobalHotkeys.FunctionKeyCode(startIdx) : 0;
-        int pauseCode = pauseIdx > 0 ? Input.GlobalHotkeys.FunctionKeyCode(pauseIdx) : 0;
-        Input.GlobalHotkeys.SetActive(new[] { startCode, pauseCode });
-        if (startCode != 0 && startCode == pauseCode)
-            InsertLog("警告：开始与暂停热键相同，将只执行“开始”动作。");
+        int idx = Math.Max(0, HotkeyControlCombo.SelectedIndex);
+        int code = idx > 0 ? Input.GlobalHotkeys.FunctionKeyCode(idx) : 0;
+        Input.GlobalHotkeys.SetActive(code == 0 ? Array.Empty<int>() : new[] { code });
     }
 
     private void OnGlobalKeyWorker(int code, bool down)
@@ -170,44 +163,29 @@ public partial class MainWindow : Window
 
     private void HandleGlobalKey(int code)
     {
-        int startIdx = Math.Max(0, HotkeyStartCombo.SelectedIndex);
-        int pauseIdx = Math.Max(0, HotkeyPauseCombo.SelectedIndex);
-        int startCode = startIdx > 0 ? Input.GlobalHotkeys.FunctionKeyCode(startIdx) : 0;
-        int pauseCode = pauseIdx > 0 ? Input.GlobalHotkeys.FunctionKeyCode(pauseIdx) : 0;
-
-        if (code == startCode && code != 0)
-        {
-            HotkeyStart();
-        }
-        else if (code == pauseCode && code != 0)
-        {
-            TogglePause();
-        }
+        int idx = Math.Max(0, HotkeyControlCombo.SelectedIndex);
+        int hot = idx > 0 ? Input.GlobalHotkeys.FunctionKeyCode(idx) : 0;
+        if (hot != 0 && code == hot) ToggleControl();
     }
 
-    private void HotkeyStart()
+    /// <summary>
+    /// 统一控制键（默认 F6）：空闲按 = 开始；倒计时中再按 = 取消开始；
+    /// 播放中按 = 暂停；暂停中按 = 继续。界面 ▶ 按钮与托盘项都走这里，行为一致。
+    /// </summary>
+    private void ToggleControl()
     {
         var eng = _engine;
         if (eng is { IsRunning: true })
         {
-            if (eng.IsPaused)
-            {
-                eng.Resume();
-                LblStatus.Foreground = Avalonia.Media.Brushes.SeaGreen;
-                LblStatus.FontSize = 21;
-                LblStatus.Text = "演奏中…";
-                InsertLog("已继续播放（热键）。");
-                UpdateTransportUi();
-            }
-            else
-            {
-                InsertLog("已在播放中。");
-            }
+            TogglePause();
             return;
         }
-        if (_busy)
+        if (_busy)   // 正在倒计时：再按一次 = 取消本次开始
         {
-            InsertLog("正在倒计时准备中，稍候…（可再按一次开始或等待开始）");
+            InsertLog("已取消本次开始（控制键），可换好歌后再按一次重新开始。");
+            _countdownTimer?.Stop();
+            _countdownTimer = null;
+            ResetUi();
             return;
         }
         RequestPlay();
@@ -244,12 +222,12 @@ public partial class MainWindow : Window
     {
         LblStatus.Foreground = Avalonia.Media.Brushes.Gray;
         LblStatus.FontSize = 15;
-        LblStatus.Text = "打开 MIDI 并点选主旋律 → 按 F5 或点 ▶ 播放；游戏中随时按 F6 暂停";
+        LblStatus.Text = "打开 MIDI 并点选主旋律 → 按 F6 或点 ▶ 播放（同一个键：再按暂停 / 再按继续）";
     }
 
     /// <summary>
     /// 按当前状态统一播放按钮与热键提示：
-    /// 空闲=▶播放(F5)；播放中=⏸暂停；暂停中=▶继续。停止按钮倒计时里可用。
+    /// 空闲=▶播放(F6)；播放中=⏸暂停；暂停中=▶继续。停止按钮倒计时里可用。
     /// </summary>
     private void UpdateTransportUi()
     {
@@ -258,14 +236,14 @@ public partial class MainWindow : Window
         {
             BtnPlay.IsEnabled = true;
             BtnStop.IsEnabled = true;
-            BtnPlay.Content = eng.IsPaused ? "▶ 继续" : "⏸ 暂停";
-            TxtHotHint.Text = eng.IsPaused ? "F5 / F6 继续" : "F6 暂停";
+            BtnPlay.Content = eng.IsPaused ? "▶ 继续 (F6)" : "⏸ 暂停";
+            TxtHotHint.Text = eng.IsPaused ? "F6 继续" : "F6 暂停";
             return;
         }
-        BtnPlay.Content = "▶ 播放 (F5)";
+        BtnPlay.Content = "▶ 播放 (F6)";
         BtnStop.IsEnabled = _busy;   // 倒计时中允许点停止取消
         BtnPlay.IsEnabled = !_busy && ActiveRows().Count > 0 && BuildMapping().InRangeCount > 0;
-        TxtHotHint.Text = "F5 开始 · F6 暂停";
+        TxtHotHint.Text = "F6：开始 / 暂停 / 继续";
     }
 
     // ================= 日志 / 设置持久化 =================
@@ -292,8 +270,7 @@ public partial class MainWindow : Window
         _cfg.Speed = (int)SliderSpeed.Value;
         _cfg.Transpose = (int)SliderTranspose.Value;
         _cfg.CountdownIndex = Math.Clamp(CountdownCombo.SelectedIndex, 0, 3);
-        _cfg.StartHotkeyIndex = Math.Clamp(HotkeyStartCombo.SelectedIndex, 0, 12);
-        _cfg.PauseHotkeyIndex = Math.Clamp(HotkeyPauseCombo.SelectedIndex, 0, 12);
+        _cfg.ControlHotkeyIndex = Math.Clamp(HotkeyControlCombo.SelectedIndex, 0, 12);
         _cfg.ChordRoot = ChkChordRoot.IsChecked == true;
         _cfg.Breath = ChkBreath.IsChecked == true;
         _cfg.VocalExtract = ChkVocalExtract.IsChecked == true;
@@ -425,6 +402,9 @@ public partial class MainWindow : Window
             var path = files[0].TryGetLocalPath();
             if (string.IsNullOrEmpty(path)) return;
 
+            // 暂停/播放中也能换歌：载入新文件前先停掉当前播放，避免新旧串曲
+            StopPlaybackForNewFile();
+
             try
             {
                 var parsed = MidiLoader.Parse(path);
@@ -457,6 +437,14 @@ public partial class MainWindow : Window
         {
             InsertLog($"打开文件对话框失败：{ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    /// <summary>载入新 MIDI 前，把还在播放/暂停的旧曲子停掉（松开按键、释放引擎）。</summary>
+    private void StopPlaybackForNewFile()
+    {
+        if (_engine is not { IsRunning: true }) return;
+        StopPlaybackNow();
+        InsertLog("已停止当前播放（换歌）。");
     }
 
     // ================= 主旋律选择 =================
@@ -793,7 +781,7 @@ public partial class MainWindow : Window
     {
         LblStatus.Foreground = Avalonia.Media.Brushes.Crimson;
         LblStatus.FontSize = 38;   // 切游戏前的最后几秒必须一眼看到
-        LblStatus.Text = $"{_countdownLeft} 秒后开始 —— 请切到游戏并装备口琴（F6 可随时暂停）";
+        LblStatus.Text = $"{_countdownLeft} 秒后开始 —— 请切到游戏并装备口琴（再按 F6 可取消）";
         SetCountdownChrome(true);
     }
 
@@ -920,7 +908,8 @@ public partial class MainWindow : Window
     private void SetBusy(bool busy)
     {
         _busy = busy;
-        BtnOpen.IsEnabled = !busy;
+        // 暂停中允许打开新 MIDI（载入时会自动先停止当前播放）
+        BtnOpen.IsEnabled = !busy || (_engine is { IsRunning: true, IsPaused: true });
         TrackList.IsEnabled = !busy;
         ChkLoop.IsEnabled = !busy;
         ChkChordRoot.IsEnabled = !busy;
@@ -965,18 +954,15 @@ public partial class MainWindow : Window
             var menu = new NativeMenu();
             var miShow = new NativeMenuItem { Header = "显示主窗口" };
             miShow.Click += (_, _) => ShowMainWindow();
-            var miStart = new NativeMenuItem { Header = "开始 / 继续" };
-            miStart.Click += (_, _) => HotkeyStart();
-            var miPause = new NativeMenuItem { Header = "暂停 / 继续" };
-            miPause.Click += (_, _) => TogglePause();
+            var miToggle = new NativeMenuItem { Header = "开始 / 暂停 / 继续（F6）" };
+            miToggle.Click += (_, _) => ToggleControl();
             var miStop = new NativeMenuItem { Header = "停止" };
             miStop.Click += (_, _) => StopPlaybackNow();
             var miQuit = new NativeMenuItem { Header = "退出" };
             miQuit.Click += (_, _) => QuitApp();
             menu.Items.Add(miShow);
             menu.Items.Add(new NativeMenuItemSeparator());
-            menu.Items.Add(miStart);
-            menu.Items.Add(miPause);
+            menu.Items.Add(miToggle);
             menu.Items.Add(miStop);
             menu.Items.Add(new NativeMenuItemSeparator());
             menu.Items.Add(miQuit);

@@ -43,7 +43,15 @@ public static class MidiLoader
         {
             TextEncoding = System.Text.Encoding.UTF8,
             DecodeTextCallback = DecodeTextSmart,
-            NotEnoughBytesPolicy = NotEnoughBytesPolicy.Ignore
+            NotEnoughBytesPolicy = NotEnoughBytesPolicy.Ignore,
+            // 网上流传的 MIDI 常带“脏数据”（如调号/通道事件的非法参数值）：
+            // 一律就近纠正而不是中断，保证能载入（这些元事件对演奏无影响）。
+            InvalidMetaEventParameterValuePolicy =
+                Melanchall.DryWetMidi.Core.InvalidMetaEventParameterValuePolicy.SnapToLimits,
+            InvalidChannelEventParameterValuePolicy =
+                Melanchall.DryWetMidi.Core.InvalidChannelEventParameterValuePolicy.SnapToLimits,
+            InvalidSystemCommonEventParameterValuePolicy =
+                Melanchall.DryWetMidi.Core.InvalidSystemCommonEventParameterValuePolicy.SnapToLimits
         };
         MidiFile file;
         try

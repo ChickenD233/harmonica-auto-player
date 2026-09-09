@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>口琴钢琴测试台（三角洲按键）</title>
+<style>
+  :root {
+    --green:#2E8B57; --green-d:#256b46;
+    --red:#C0392B; --ink:#333; --sub:#8A8F98; --card:#fff; --bg:#F3F4F6;
+    --warn-bg:#FDEBEA; --warn-border:#E8B4B0; --warn-fg:#9C3029;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; padding:18px; background:var(--bg); color:var(--ink);
+    font-family:"Microsoft YaHei UI","微软雅黑","PingFang SC",system-ui,sans-serif;
+  }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--sub); font-size:12px; margin:0 0 14px; line-height:1.7; }
+  .card { background:var(--card); border:1px solid #E3E6EB; border-radius:10px; padding:14px 16px; margin-bottom:12px; }
+  .row { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .toolbar { margin-bottom:10px; }
+  .toolbar label { font-size:13px; }
+  select, button { font-size:13px; padding:5px 8px; border-radius:6px; border:1px solid #C9CDD4; background:#fff; }
+  .lamp {
+    display:inline-flex; align-items:center; gap:6px; border:1px solid #D8DCE2;
+    border-radius:8px; padding:5px 12px; font-size:13px; background:#FAFBFC;
+  }
+  .lamp .dot { width:12px; height:12px; border-radius:50%; background:#D8DCE2; }
+  .lamp.on-left .dot { background:#E67E22; }
+  .lamp.on-right .dot { background:#2980B9; }
+  .lamp.on-mid .dot { background:#8E44AD; }
+  .lamp.on-left { border-color:#E67E22; }
+  .lamp.on-right { border-color:#2980B9; }
+  .lamp.on-mid { border-color:#8E44AD; }
+  .now {
+    display:flex; align-items:baseline; gap:16px; margin-bottom:12px; min-height:44px;
+  }
+  .now .big { font-size:30px; font-weight:bold; color:var(--green); }
+  .now .combo { font-size:14px; color:var(--sub); }
+  .keys { display:flex; gap:6px; flex-wrap:wrap; }
+  .gkey {
+    width:52px; height:60px; border-radius:8px; border:2px solid #C9CDD4;
+    background:#fff; text-align:center; cursor:pointer; user-select:none;
+    box-shadow:0 2px 0 #b7bcc4; position:relative;
+  }
+  .gkey kbd { display:block; font-size:18px; font-weight:bold; margin-top:8px; font-family:Consolas,monospace; }
+  .gkey .nm { display:block; font-size:11px; color:var(--sub); margin-top:6px; }
+  .gkey.down { background:#DDF1E4; border-color:var(--green); box-shadow:0 1px 0 #256b46; transform:translateY(1px); }
+  .piano { display:flex; flex-wrap:wrap; gap:2px; }
+  .pk {
+    width:34px; height:34px; border-radius:4px; display:flex; align-items:center; justify-content:center;
+    font-size:11px; background:#fff; border:1px solid #D8DCE2; transition:background .05s, box-shadow .05s;
+  }
+  .pk.sharps { background:#34495E; color:#ECF0F1; }
+  .pk.on { background:#F5B041; border-color:#E67E22; box-shadow:0 0 0 2px #E67E22; color:#fff; }
+  .pk.reg-low { border-left:3px solid #E67E22; }
+  .pk.reg-high { border-left:3px solid #2980B9; }
+  .pk.reg-top { border-left:3px solid #8E44AD; }
+  .note-legend { font-size:12px; color:var(--sub); margin:8px 0 4px; }
+  .warn { background:var(--warn-bg); border:1px solid var(--warn-border); border-radius:8px;
+          padding:8px 12px; color:var(--warn-fg); font-size:12.5px; line-height:1.8; }
+  .muted { opacity:.55; }
+</style>
+</head>
+<body>
+  <h1>口琴钢琴测试台（按键与《三角洲行动》口琴一致）</h1>
+  <p class="sub">
+    供你验证自动演奏器输出：把本页放到前台并点一下页面获得键盘焦点（光标也放在页面内），
+    再运行 Windows 版软件开始播放，页面会亮起并报出正在“吹”的音。
+  </p>
+
+  <div class="card">
+    <div class="row toolbar">
+      <label>中音 do = <select id="baseSel"></select></label>
+      <label><input type="checkbox" id="mute"> 静音</label>
+      <button id="clearBtn">全部松开（紧急停止）</button>
+      <span class="lamp" id="lampLeft">左键 低八度<span class="dot"></span></span>
+      <span class="lamp" id="lampRight">右键 高八度<span class="dot"></span></span>
+      <span class="lamp" id="lampMid">中键 升半音<span class="dot"></span></span>
+    </div>
+
+    <div class="now">
+      <span class="big" id="nowName">—</span>
+      <span class="combo" id="nowCombo">等待按键…</span>
+    </div>
+
+    <div class="note-legend">音高范围（低音do ~ 高高音#do，橙色=低八度、蓝色=高八度、紫色=高高音区）：</div>
+    <div class="piano" id="pianoStrip"></div>
+  </div>
+
+  <div class="card">
+    <div class="note-legend">输入键（可点击，也可用键盘按）：</div>
+    <div class="keys" id="virtualKeys"></div>
+    <p class="sub" style="margin:10px 0 0">
+      规则：z x c v b n m = do re mi fa sol la si（中音）；逗号 = 高音do；按住左键 = 整排降到低八度；
+      按住右键 = 整排升到高八度；右键+逗号 = 高高音do；再按中键 = 高高音#do；每个白键 + 中键 = 升半音。
+    </p>
+  </div>
+
+  <div class="warn">
+    ⚠ 虚拟输入可能违反游戏规则，有账号封禁风险。本页仅供开发调试使用，测试自动演奏时请使用练习场景/单机，风险自负。
+  </div>
+
+<script>
+"use strict";
+// ---------- 配置 ----------
+const NAME12 = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+const DEG = ["do","#do","re","#re","mi","fa","#fa","sol","#sol","la","#la","si"];
+const KEY_DEG = { "z":0, "x":2, "c":4, "v":5, "b":7, "n":9, "m":11 }; // 半音偏移
+const PHYS_KEYS = ["z","x","c","v","b","n","m",","];
+
+let baseOct = 5;             // 中音do 所在八度（MIDI 八度号，C4=第4八度）
+let shift = 0;               // -1 左键 / 0 默认 / +1 右键
+let sharp = false;           // 中键
+let held = [];               // 正在按住的物理键（后按的优先，单音）
+const noteState = { osc:null, gain:null, pitch:0, on:false };
+
+// ---------- DOM ----------
+const $ = id => document.getElementById(id);
+const stripEl = $("pianoStrip"), vkeysEl = $("virtualKeys"),
+      nowName = $("nowName"), nowCombo = $("nowCombo");
+const lampL = $("lampLeft"), lampR = $("lampRight"), lampM = $("lampMid");
+
+// ---------- 八度选择 ----------
+(function fillBaseSel(){
+  for (let o=3; o<=7; o++){
+    const op = document.createElement("option");
+    op.value = o; op.textContent = "C"+o;
+    if (o===baseOct) op.selected = true;
+    $("baseSel").appendChild(op);
+  }
+})();
+$("baseSel").addEventListener("change", e=>{ baseOct = parseInt(e.target.value,10); rebuildStrip(); refresh(); });
+
+// ---------- 音名工具 ----------
+function pitchName(p){ return NAME12[((p%12)+12)%12] + (Math.floor(p/12)-1); }
+function regOf(p, b){ const d = Math.floor(p/12)-1 - b; return d<=-1?"低":d===0?"中":d===1?"高":"高高"; }
+function degName(p){ return DEG[((p%12)+12)%12]; }
+
+// ---------- 组合 → 音高 ----------
+function pitchFrom(key){
+  const pc = KEY_DEG[key];
+  const oct = (key === ",") ? baseOct + shift + 1 : baseOct + shift; // 逗号=下个八度的do
+  let p = (oct+1)*12 + (pc===undefined?0:pc);
+  if (sharp) p += 1;
+  return p;
+}
+
+// ---------- 音频（简单口琴音） ----------
+let actx = null;
+function ensureAudio(){
+  if (!$("mute").checked && actx === null){
+    try { actx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){}
+  }
+  if (actx && actx.state === "suspended") actx.resume();
+}
+function freq(p){ return 440 * Math.pow(2, (p-69)/12); }
+function voiceStart(p){
+  if (!actx || $("mute").checked) return;
+  voiceStop(0.02);
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = "triangle"; o.frequency.value = freq(p);
+  g.gain.setValueAtTime(0.0001, actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.18, actx.currentTime + 0.015);
+  o.connect(g); g.connect(actx.destination);
+  o.start();
+  noteState.osc = o; noteState.gain = g; noteState.pitch = p; noteState.on = true;
+}
+function voiceStop(release){
+  if (!noteState.on || !noteState.osc) return;
+  const t = actx.currentTime;
+  try {
+    noteState.gain.gain.cancelScheduledValues(t);
+    noteState.gain.gain.setValueAtTime(noteState.gain.gain.value, t);
+    noteState.gain.gain.exponentialRampToValueAtTime(0.0001, t + (release||0.06));
+  } catch(e){}
+  const o = noteState.osc;
+  o.stop(t + (release||0.06)+0.02);
+  noteState.osc=null; noteState.gain=null; noteState.on=false;
+}
+
+// ---------- 状态刷新 ----------
+function activeKey(){ return held.length ? held[held.length-1] : null; }
+function refresh(){
+  const key = activeKey();
+  let combo = "";
+  if (key){
+    const p = pitchFrom(key);
+    const reg = regOf(p, baseOct);
+    nowName.textContent = reg + degName(p) + "  " + pitchName(p);
+    const mods = [];
+    if (shift === -1) mods.push("按住左键");
+    else if (shift === 1) mods.push("按住右键");
+    if (sharp) mods.push("中键(升半音)");
+    mods.push(key === "," ? "键[，]" : "键[" + key.toUpperCase() + "]");
+    combo = "按下 " + mods.join(" + ") + " = " + pitchName(p) + "（" + reg + "音区）";
+    highlightPiano(p);
+  } else {
+    nowName.textContent = "—";
+    combo = "等待按键…";
+    highlightPiano(null);
+  }
+  nowCombo.textContent = combo;
+  lampL.classList.toggle("on-left", shift===-1);
+  lampR.classList.toggle("on-right", shift===1);
+  lampM.classList.toggle("on-mid", sharp);
+  document.querySelectorAll(".gkey").forEach(el=>{
+    el.classList.toggle("down", held.includes(el.dataset.key));
+  });
+}
+function highlightPiano(p){
+  document.querySelectorAll(".pk").forEach(el=>{
+    el.classList.toggle("on", p!==null && parseInt(el.dataset.p,10)===p);
+  });
+}
+
+// ---------- 事件 ----------
+function pressKey(key){
+  ensureAudio();
+  if (!held.includes(key)) held.push(key);
+  voiceStart(pitchFrom(key));
+  refresh();
+}
+function releaseKey(key){
+  const i = held.indexOf(key);
+  if (i>=0) held.splice(i,1);
+  refresh();
+  if (!held.length) voiceStop(0.08);
+  else voiceStart(pitchFrom(activeKey()));
+}
+function updateMods(){ // 松开/换键时若仍有按住键，重触发新音高（与引擎“切音”一致）
+  refresh();
+  if (held.length){
+    voiceStop(0.02);
+    ensureAudio();
+    voiceStart(pitchFrom(activeKey()));
+  }
+}
+
+document.addEventListener("keydown", e=>{
+  const k = e.key.toLowerCase();
+  if (PHYS_KEYS.includes(k)) {
+    e.preventDefault();
+    if (!e.repeat) pressKey(k);
+  }
+});
+document.addEventListener("keyup", e=>{
+  const k = e.key.toLowerCase();
+  if (PHYS_KEYS.includes(k)) { e.preventDefault(); releaseKey(k); }
+});
+window.addEventListener("blur", ()=> releaseAll(true));
+
+function btnState(button){ return button===1 ? "middle" : button===2 ? "right" : button===0 ? "left" : null; }
+document.addEventListener("mousedown", e=>{
+  const b = btnState(e.button);
+  if (b==="left") shift = -1;
+  else if (b==="right"){ shift = 1; e.preventDefault(); }
+  else if (b==="middle"){ sharp = true; e.preventDefault(); }
+  else return;
+  ensureAudio(); updateMods();
+});
+document.addEventListener("mouseup", e=>{
+  const b = btnState(e.button);
+  if (b==="left") shift = 0;
+  else if (b==="right"){ if(shift===1) shift = 0; e.preventDefault(); }
+  else if (b==="middle"){ sharp = false; e.preventDefault(); }
+  else return;
+  updateMods();
+});
+document.addEventListener("contextmenu", e=>e.preventDefault());
+
+function releaseAll(alsoVoice){
+  held = [];
+  shift = 0; sharp = false;
+  refresh();
+  if (alsoVoice) voiceStop(0.08);
+}
+$("clearBtn").addEventListener("click", ()=> releaseAll(true));
+
+// ---------- 虚拟按键 / 音高条 ----------
+(function buildKeys(){
+  PHYS_KEYS.forEach(k=>{
+    const d = document.createElement("div");
+    d.className = "gkey"; d.dataset.key = k;
+    const nm = k === "," ? "高do" : ["do","re","mi","fa","sol","la","si"][KEY_DEG[k]? KEY_DEG[k]/2 : 0];
+    const k2 = k === "," ? "，": k.toUpperCase();
+    d.innerHTML = "<kbd>"+k2+"</kbd><span class='nm'>"+nm+"</span>";
+    d.addEventListener("pointerdown", ev=>{ ev.preventDefault(); pressKey(k); });
+    d.addEventListener("pointerup",   ()=>releaseKey(k));
+    d.addEventListener("pointerleave",()=>releaseKey(k));
+    vkeysEl.appendChild(d);
+  });
+})();
+function rebuildStrip(){
+  stripEl.innerHTML = "";
+  const minP = (baseOct+1-1)*12;      // 低音do
+  const maxP = (baseOct+1+2)*12 + 1;  // 高高音#do
+  for (let p=minP; p<=maxP; p++){
+    const el = document.createElement("div");
+    el.className = "pk" + (NAME12[p%12].includes("#") ? " sharps":"");
+    const reg = regOf(p, baseOct);
+    if (reg==="低") el.classList.add("reg-low");
+    else if (reg==="高") el.classList.add("reg-high");
+    else if (reg==="高高") el.classList.add("reg-top");
+    el.dataset.p = p;
+    el.textContent = pitchName(p);
+    el.title = reg + degName(p) + " (" + pitchName(p) + ")";
+    stripEl.appendChild(el);
+  }
+}
+rebuildStrip();
+refresh();
+</script>
+</body>
+</html>

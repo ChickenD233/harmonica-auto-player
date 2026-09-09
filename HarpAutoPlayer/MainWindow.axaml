@@ -1,0 +1,225 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:HarpAutoPlayer"
+        x:Class="HarpAutoPlayer.MainWindow"
+        Title="口琴自动演奏器（三角洲行动）"
+        Width="1000" Height="660"
+        MinWidth="900" MinHeight="560"
+        WindowStartupLocation="CenterScreen"
+        Background="#F3F4F6"
+        FontFamily="Microsoft YaHei UI,微软雅黑,Segoe UI"
+        Closing="OnClosing">
+
+  <Window.Styles>
+    <!-- 强制浅色界面：文字色写死为深色，避免系统深色/高对比主题下白字白底看不见 -->
+    <Style Selector="Window">
+      <Setter Property="Foreground" Value="#20242A"/>
+    </Style>
+    <Style Selector="Window TextBlock">
+      <Setter Property="Foreground" Value="#20242A"/>
+    </Style>
+    <Style Selector="Window Button">
+      <Setter Property="Foreground" Value="#20242A"/>
+    </Style>
+    <Style Selector="Window CheckBox">
+      <Setter Property="Foreground" Value="#20242A"/>
+    </Style>
+    <!-- 统一卡片样式 -->
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="BorderBrush" Value="#E3E6EB"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="12"/>
+    </Style>
+    <!-- 列表行铺满 -->
+    <Style Selector="ListBox#TrackList ListBoxItem">
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    </Style>
+    <!-- 主按钮（绿色底白字，覆盖上面的默认深字色） -->
+    <Style Selector="Button.accent">
+      <Setter Property="Background" Value="#2E8B57"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="TextBlock.sectionLabel">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Foreground" Value="#8A8F98"/>
+    </Style>
+  </Window.Styles>
+
+  <DockPanel Margin="14">
+
+    <!-- ============ 底部免责声明（点击可关闭） ============ -->
+    <Border DockPanel.Dock="Bottom" Margin="0,10,0,0" Background="#FDEBEA"
+            BorderBrush="#E8B4B0" BorderThickness="1" CornerRadius="8" Padding="10,7"
+            PointerPressed="Disclaimer_PointerPressed" Cursor="Hand">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="#9C3029" VerticalAlignment="Center">
+          <Run FontWeight="Bold" Text="⚠ "/><Run Text="虚拟输入违反游戏规则，有账号封禁风险，请谨慎使用，风险自负"/>
+        </TextBlock>
+        <TextBlock Grid.Column="1" Text="✕" FontSize="13" Foreground="#B0716B"
+                   Margin="12,0,2,0" VerticalAlignment="Center"/>
+      </Grid>
+    </Border>
+
+    <!-- ================= 左栏：文件 → 轨道 ================= -->
+    <Grid Width="400" RowDefinitions="Auto,*" DockPanel.Dock="Left" Margin="0,0,12,0">
+
+      <Border Grid.Row="0" Classes="card">
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
+          <Button x:Name="BtnOpen" Content="打开 MIDI 文件…" Click="BtnOpen_Click"
+                  Padding="12,6" FontSize="13"/>
+          <TextBlock Grid.Column="1" x:Name="LblFile" VerticalAlignment="Center"
+                     Margin="10,0,0,0" Text="未选择文件" Foreground="#8A8F98"
+                     FontSize="12" TextTrimming="CharacterEllipsis"/>
+          <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Classes="sectionLabel" Margin="0,8,0,0"
+                     Text="支持 .mid / .midi / .kar / .rmi"/>
+        </Grid>
+      </Border>
+
+      <Border Grid.Row="1" Classes="card" Margin="0,10,0,0">
+        <Grid RowDefinitions="Auto,*">
+          <Grid ColumnDefinitions="22,24,30,62,*,52,82" Background="#F7F8FA">
+            <TextBlock Text="" FontSize="11"/>
+            <TextBlock Grid.Column="1" Text="合" FontSize="11" Foreground="#5B616B"
+                       Padding="2,7" FontWeight="SemiBold"
+                       ToolTip.Tip="勾选多个声部一起吹；编号=优先级，越靠前越优先，冲突时先吹编号小的"/>
+            <TextBlock Grid.Column="2" Text="轨" FontSize="11" Foreground="#5B616B"
+                       Padding="4,7" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="3" Text="声道" FontSize="11" Foreground="#5B616B"
+                       Padding="4,7" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="4" Text="名称" FontSize="11" Foreground="#5B616B"
+                       Padding="4,7" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="5" Text="音符" FontSize="11" Foreground="#5B616B"
+                       Padding="4,7" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="6" Text="音域" FontSize="11" Foreground="#5B616B"
+                       Padding="4,7" FontWeight="SemiBold"/>
+          </Grid>
+          <Grid Grid.Row="1">
+            <ListBox x:Name="TrackList" SelectionMode="Single" Background="Transparent"
+                     SelectionChanged="TrackList_SelectionChanged">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <Grid ColumnDefinitions="22,24,30,62,*,52,82" MinHeight="28">
+                    <TextBlock Text="{Binding MixRank}" FontSize="10" Foreground="#1F6FB2"
+                               FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               IsVisible="{Binding IsMix}"/>
+                    <TextBlock Text="●" FontSize="10" Foreground="#2E8B57"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               IsVisible="{Binding ShowStar}"/>
+                    <CheckBox Grid.Column="1" IsChecked="{Binding IsMix}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                              Checked="Mix_Changed" Unchecked="Mix_Changed"
+                              ToolTip.Tip="勾选进合奏；再勾第二个会排在后面（2号）"/>
+                    <TextBlock Grid.Column="2" Text="{Binding TrackLabel}" VerticalAlignment="Center"
+                               Padding="4,3" FontSize="12"/>
+                    <TextBlock Grid.Column="3" Text="{Binding ChannelLabel}" VerticalAlignment="Center"
+                               Padding="4,3" FontSize="12"/>
+                    <TextBlock Grid.Column="4" Text="{Binding Name}" VerticalAlignment="Center"
+                               Padding="4,3" FontSize="12" TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding Name}"/>
+                    <TextBlock Grid.Column="5" Text="{Binding NoteCount}" VerticalAlignment="Center"
+                               Padding="4,3" FontSize="12" HorizontalAlignment="Center"/>
+                    <TextBlock Grid.Column="6" Text="{Binding RangeLabel}" VerticalAlignment="Center"
+                               Padding="4,3" FontSize="12"/>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Grid>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <!-- ================= 右栏：演奏 ================= -->
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+
+      <Border Grid.Row="0" Classes="card">
+        <StackPanel>
+          <TextBlock x:Name="LblMelody" TextWrapping="Wrap" FontSize="14" LineHeight="21"
+                     Text="打开 MIDI 文件，并在左侧单击一行作为主旋律。"/>
+          <TextBlock x:Name="LblWarn" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0" Text=""/>
+        </StackPanel>
+      </Border>
+
+      <Border Grid.Row="1" Classes="card" Margin="0,10,0,0" Padding="10,12">
+        <TextBlock x:Name="LblStatus" FontSize="21" FontWeight="Bold" Foreground="#1E7A3C"
+                   HorizontalAlignment="Center" Text="" TextWrapping="Wrap"/>
+      </Border>
+
+      <Border Grid.Row="2" Classes="card" Margin="0,10,0,0">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+            <Button x:Name="BtnPlay" Content="▶ 播放" Click="BtnPlay_Click"
+                    Classes="accent" FontSize="15" Padding="20,8" IsEnabled="False"/>
+            <Button x:Name="BtnStop" Content="■ 停止" Click="BtnStop_Click"
+                    FontSize="15" Padding="20,8" IsEnabled="False"/>
+            <CheckBox x:Name="ChkLoop" Content="循环" VerticalAlignment="Center" FontSize="13"/>
+          </StackPanel>
+          <Grid Grid.Column="1" ColumnDefinitions="*,Auto" Margin="16,0,0,0">
+            <Slider x:Name="SliderProgress" VerticalAlignment="Center" Margin="0,0,10,0"
+                    Minimum="0" Maximum="1" Value="0" IsEnabled="False"/>
+            <TextBlock Grid.Column="1" x:Name="TxtTime" VerticalAlignment="Center"
+                       Text="0.0 / 0.0 s" FontSize="12" Foreground="#8A8F98"/>
+          </Grid>
+        </Grid>
+      </Border>
+
+      <Border Grid.Row="3" Classes="card" Margin="0,10,0,0" Padding="14,10" ClipToBounds="True">
+        <WrapPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,24,4">
+            <TextBlock Text="速度" FontSize="13" VerticalAlignment="Center" MinWidth="34"/>
+            <Slider x:Name="SliderSpeed" Width="110" Minimum="50" Maximum="200" Value="100"
+                    TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="SpeedChanged"
+                    VerticalAlignment="Center"/>
+            <TextBlock x:Name="TxtSpeed" Text="100%" FontSize="12" VerticalAlignment="Center"
+                       Foreground="#5B616B" Width="40"/>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,24,4">
+            <TextBlock Text="移调" FontSize="13" VerticalAlignment="Center" MinWidth="34"/>
+            <Slider x:Name="SliderTranspose" Width="110" Minimum="-10" Maximum="10" Value="0"
+                    TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SpeedChanged"
+                    VerticalAlignment="Center"/>
+            <TextBlock x:Name="TxtTranspose" Text="0" FontSize="12" VerticalAlignment="Center"
+                       Foreground="#5B616B" Width="32"/>
+          </StackPanel>
+          <Button x:Name="BtnAutoTranspose" Content="一键移调" FontSize="12.5"
+                  Padding="10,4" Margin="0,0,24,4" VerticalAlignment="Center"
+                  Click="BtnAutoTranspose_Click" ToolTip.Tip="自动找到让所有音都在口琴音域内的移调量"/>
+          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,24,4">
+            <TextBlock Text="倒计时" FontSize="13" VerticalAlignment="Center" MinWidth="34"/>
+            <ComboBox x:Name="CountdownCombo" Width="104" FontSize="12.5" SelectedIndex="1"
+                      VerticalAlignment="Center" SelectionChanged="CountdownCombo_Changed"/>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,24,4">
+            <TextBlock Text="开始热键" FontSize="13" VerticalAlignment="Center"/>
+            <ComboBox x:Name="HotkeyStartCombo" Width="86" FontSize="12.5"
+                      VerticalAlignment="Center" SelectionChanged="Hotkey_Changed"/>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,24,4">
+            <TextBlock Text="暂停热键" FontSize="13" VerticalAlignment="Center"/>
+            <ComboBox x:Name="HotkeyPauseCombo" Width="86" FontSize="12.5"
+                      VerticalAlignment="Center" SelectionChanged="Hotkey_Changed"/>
+          </StackPanel>
+          <CheckBox x:Name="ChkChordRoot" Content="同刻多音取最高（还原主旋律）" FontSize="13"
+                    IsChecked="True" VerticalAlignment="Center" Margin="0,0,24,4"
+                    ToolTip.Tip="口琴一次只能吹一个音：多个音同时响时吹最高的那个——主旋律通常在最高声部，尽量贴近原曲"
+                    IsCheckedChanged="Chord_Changed"/>
+          <CheckBox x:Name="ChkVocalExtract" Content="人声旋律提取" FontSize="13"
+                    IsChecked="False" VerticalAlignment="Center" Margin="0,0,24,4"
+                    ToolTip.Tip="伴奏与主唱混在同一轨时用：只在人声音区里取音并保持旋律连续，过滤低音/和声伴奏"
+                    IsCheckedChanged="Chord_Changed"/>
+          <CheckBox x:Name="ChkBreath" Content="呼吸休止" FontSize="13"
+                    IsChecked="False" VerticalAlignment="Center" Margin="0,0,0,4"
+                    IsCheckedChanged="Breath_Changed"/>
+        </WrapPanel>
+      </Border>
+
+      <Border Grid.Row="4" Classes="card" Margin="0,10,0,0" Padding="10,8" Background="#FAFBFC">
+        <ListBox x:Name="LogList" FontSize="12" Foreground="#555" Background="Transparent"/>
+      </Border>
+    </Grid>
+  </DockPanel>
+</Window>

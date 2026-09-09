@@ -108,33 +108,22 @@ public static class InputSender
         return 0;
     }
 
-    /// <summary>
-    /// 发送模式：true=扫描码（很多游戏/DirectInput 只认扫描码，推荐）；
-    /// false=虚拟键码（对纯文本应用更通用，Word/记事本等）。
-    /// </summary>
-    public static bool UseScanCodes { get; set; } = true;
-
     private static void SendKey(bool down, char vkChar)
     {
         if (!OperatingSystem.IsWindows()) return;   // 该功能仅本程序目标系统有效
         ushort vk = VkCodeOf(char.ToUpperInvariant(vkChar));
         if (vk == 0) return;
 
+        // 一律用“扫描码”发送：wVk 置 0、带 KEYEVENTF_SCANCODE，
+        // 按物理按键位发送（很多游戏/DirectInput 只认扫描码，兼容性最好）
         var ki = new KEYBDINPUT
         {
-            wVk = vk,
+            wVk = 0,
             wScan = MapVirtualKeyW(vk, MAPVK_VK_TO_VSC),
-            dwFlags = down ? 0 : KEYEVENTF_KEYUP,
+            dwFlags = (down ? 0u : KEYEVENTF_KEYUP) | KEYEVENTF_SCANCODE,
             time = 0,
             dwExtraInfo = IntPtr.Zero
         };
-
-        if (UseScanCodes)
-        {
-            // 用扫描码发送：wVk 置 0、带 KEYEVENTF_SCANCODE，物理按键位发送
-            ki.wVk = 0;
-            ki.dwFlags |= KEYEVENTF_SCANCODE;
-        }
 
         var input = new INPUT
         {

@@ -228,9 +228,13 @@
                     IsChecked="False" VerticalAlignment="Center" Margin="0,0,24,4"
                     IsCheckedChanged="Breath_Changed"/>
           <CheckBox x:Name="ChkTrimLead" Content="去除开头空拍" FontSize="13"
-                    IsChecked="True" VerticalAlignment="Center" Margin="0,0,0,4"
+                    IsChecked="True" VerticalAlignment="Center" Margin="0,0,24,4"
                     ToolTip.Tip="很多 MIDI 开头有几小节休止/空白：勾选后自动把起始静音剪掉，让旋律从第 0 秒直接开始"
                     IsCheckedChanged="Option_Changed"/>
+          <CheckBox x:Name="ChkAutoMinimize" Content="播放后自动最小化窗口" FontSize="13"
+                    IsChecked="True" VerticalAlignment="Center" Margin="0,0,0,4"
+                    ToolTip.Tip="勾选：开始播放后窗口自动最小化到任务栏；不勾选：窗口保持原样（放副屏上看进度/歌词时用，记得点一下游戏画面让游戏拿到焦点）"
+                    IsCheckedChanged="AutoMinimize_Changed"/>
         </WrapPanel>
       </Border>
 

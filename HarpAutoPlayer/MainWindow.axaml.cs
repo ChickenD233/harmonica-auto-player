@@ -70,6 +70,7 @@ public partial class MainWindow : Window
         ChkBreath.IsChecked = _cfg.Breath;
         ChkVocalExtract.IsChecked = _cfg.VocalExtract;
         ChkTrimLead.IsChecked = _cfg.TrimLead;
+        ChkAutoMinimize.IsChecked = _cfg.AutoMinimizeOnPlay;
 
         _saveDeb = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
         _saveDeb.Tick += (_, _) =>
@@ -275,6 +276,7 @@ public partial class MainWindow : Window
         _cfg.Breath = ChkBreath.IsChecked == true;
         _cfg.VocalExtract = ChkVocalExtract.IsChecked == true;
         _cfg.TrimLead = ChkTrimLead.IsChecked == true;
+        _cfg.AutoMinimizeOnPlay = ChkAutoMinimize.IsChecked == true;
         _cfg.Save();
     }
 
@@ -662,6 +664,12 @@ public partial class MainWindow : Window
         ScheduleSave();
     }
 
+    /// <summary>「播放后自动最小化窗口」：只影响开始播放时是否缩窗，不需要刷新预览。</summary>
+    private void AutoMinimize_Changed(object? sender, RoutedEventArgs e)
+    {
+        ScheduleSave();
+    }
+
     private void RefreshPreview()
     {
         var okColor = Avalonia.Media.Brushes.SeaGreen;
@@ -822,9 +830,18 @@ public partial class MainWindow : Window
         SetCountdownChrome(false);
         LblStatus.Text = "演奏中…";
 
-        // 开始吹奏后自动最小化，方便直接操作游戏（托盘可随时控制）
-        if (WindowState != WindowState.Minimized)
-            WindowState = WindowState.Minimized;
+        // 播放后是否自动最小化：由选项决定（放副屏观察进度时可保持窗口）
+        if (ChkAutoMinimize.IsChecked == true)
+        {
+            if (WindowState != WindowState.Minimized)
+                WindowState = WindowState.Minimized;
+        }
+        else
+        {
+            if (WindowState == WindowState.Minimized)
+                WindowState = WindowState.Normal;   // 关掉该选项时，若本来缩着就恢复出来
+            InsertLog("（未自动最小化窗口：请点一下游戏画面让游戏获得焦点，否则按键会发到本程序窗口）");
+        }
 
         UpdateTransportUi();
         SliderProgress.IsEnabled = true;
@@ -916,6 +933,7 @@ public partial class MainWindow : Window
         ChkBreath.IsEnabled = !busy;
         ChkVocalExtract.IsEnabled = !busy;
         ChkTrimLead.IsEnabled = !busy;
+        ChkAutoMinimize.IsEnabled = !busy;
         CountdownCombo.IsEnabled = !busy;
         BtnAutoTranspose.IsEnabled = !busy;
         UpdateTransportUi();

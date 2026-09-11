@@ -43,6 +43,8 @@ public partial class MainWindow : Window
     private static readonly int[] CountdownOptions = { 0, 3, 5, 10 };
     private const int FixedLeadMs = 25;
 
+    private bool _uiReady;   // 构造期各下拉框初始化会触发 *Changed，此时不应写日志
+
     public MainWindow()
     {
         InitializeComponent();
@@ -60,6 +62,10 @@ public partial class MainWindow : Window
         HotkeyControlCombo.ItemsSource = fkeys;
         HotkeyControlCombo.SelectedIndex = 6;   // F6
 
+        // 输入兼容档位：稳健 / 标准 / 极限（决定修饰键与音键之间的物理时间余量）
+        TimingCombo.ItemsSource = InputTiming.Names;
+        TimingCombo.SelectedIndex = 1;          // 标准
+
         // —— 记住上次设置 ——
         _cfg = AppConfig.Load();
         CountdownCombo.SelectedIndex = Math.Clamp(_cfg.CountdownIndex, 0, 3);
@@ -71,6 +77,7 @@ public partial class MainWindow : Window
         ChkVocalExtract.IsChecked = _cfg.VocalExtract;
         ChkTrimLead.IsChecked = _cfg.TrimLead;
         ChkAutoMinimize.IsChecked = _cfg.AutoMinimizeOnPlay;
+        TimingCombo.SelectedIndex = Math.Clamp(_cfg.TimingIndex, 0, 2);
 
         _saveDeb = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
         _saveDeb.Tick += (_, _) =>
@@ -106,6 +113,7 @@ public partial class MainWindow : Window
         RefreshPreview();
         SetIdleHint();
         UpdateTransportUi();
+        _uiReady = true;
 
         InsertLog("欢迎使用 口琴自动演奏器（三角洲行动）");
         InsertLog("用法：打开 MIDI 文件 → 在左侧单击一行作为主旋律 → 按 F6（或点「▶ 播放」），倒计时内切到游戏并装备口琴即可。");
@@ -277,6 +285,7 @@ public partial class MainWindow : Window
         _cfg.VocalExtract = ChkVocalExtract.IsChecked == true;
         _cfg.TrimLead = ChkTrimLead.IsChecked == true;
         _cfg.AutoMinimizeOnPlay = ChkAutoMinimize.IsChecked == true;
+        _cfg.TimingIndex = Math.Clamp(TimingCombo.SelectedIndex, 0, 2);
         _cfg.Save();
     }
 
@@ -664,6 +673,16 @@ public partial class MainWindow : Window
         ScheduleSave();
     }
 
+    /// <summary>输入兼容档位：只影响下一次开始播放时的事件时序，不需要刷新预览。</summary>
+    private void Timing_Changed(object? sender, SelectionChangedEventArgs e)
+    {
+        ScheduleSave();
+        if (!_uiReady) return;
+        var t = InputTiming.FromIndex(TimingCombo.SelectedIndex);
+        InsertLog($"输入兼容档位：{t.Name}（帧长 {t.FrameMs:F0}ms、修饰键提前 {t.ModLeadMs:F0}ms、" +
+                  $"同键重触发 {t.RetriggerMs:F0}ms）");
+    }
+
     /// <summary>「播放后自动最小化窗口」：只影响开始播放时是否缩窗，不需要刷新预览。</summary>
     private void AutoMinimize_Changed(object? sender, RoutedEventArgs e)
     {
@@ -821,6 +840,7 @@ public partial class MainWindow : Window
         SliderProgress.Value = 0;
         _gameHwnd = IntPtr.Zero;   // 新一轮播放重新记忆游戏窗口
         bool breath = ChkBreath.IsChecked == true;
+        engine.Timing = InputTiming.FromIndex(TimingCombo.SelectedIndex);
         engine.Play(_playNotes, speed, FixedLeadMs, loop, breath);
         SliderProgress.Maximum = Math.Max(0.1, engine.TotalSeconds);
         string fgTitle = Input.InputSender.ForegroundWindowTitle;
@@ -879,6 +899,7 @@ public partial class MainWindow : Window
             _uiTimer?.Stop();
             _uiTimer = null;
             InsertLog("播放结束。");
+            InsertLog(eng.Probe.Summary());
         }
         ResetUi();
     }
@@ -896,6 +917,7 @@ public partial class MainWindow : Window
 
         _uiTimer?.Stop();
         _uiTimer = null;
+        if (eng != null) InsertLog(eng.Probe.Summary());
         InsertLog("已停止。");
         ForceReleaseKeysForGame();
         ResetUi();

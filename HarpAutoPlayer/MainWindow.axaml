@@ -216,6 +216,13 @@
                       VerticalAlignment="Center" SelectionChanged="Hotkey_Changed"
                       ToolTip.Tip="同一个键：空闲按=开始；播放中按=暂停；暂停中按=继续；倒计时中按=取消"/>
           </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,24,4">
+            <TextBlock Text="输入兼容" FontSize="13" VerticalAlignment="Center"
+                       ToolTip.Tip="游戏按键是按帧读取的：修饰键与音键间隔太短会被折进同一帧，导致漏音。这里给出时间余量。"/>
+            <ComboBox x:Name="TimingCombo" Width="150" FontSize="12.5" SelectedIndex="1"
+                      VerticalAlignment="Center" SelectionChanged="Timing_Changed"
+                      ToolTip.Tip="稳健=给30fps/掉帧留余量；标准=60fps 推荐；极限=高帧率下跟快歌。若仍漏音请选「稳健」。"/>
+          </StackPanel>
           <CheckBox x:Name="ChkChordRoot" Content="同刻多音取最高（还原主旋律）" FontSize="13"
                     IsChecked="True" VerticalAlignment="Center" Margin="0,0,24,4"
                     ToolTip.Tip="口琴一次只能吹一个音：多个音同时响时吹最高的那个——主旋律通常在最高声部，尽量贴近原曲"

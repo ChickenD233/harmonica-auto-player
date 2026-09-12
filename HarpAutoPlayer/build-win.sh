@@ -21,15 +21,27 @@ fi
 export NUGET_PACKAGES="${NUGET_PACKAGES:-$PWD/../.tools/nuget}"
 export DOTNET_CLI_HOME="${DOTNET_CLI_HOME:-$PWD/../.tools/dotnet-home}"
 export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
+# Avalonia 的构建遥测默认会尝试写 ~/Library/Application Support/AvaloniaUI/，
+# 在受限环境（沙箱 / 只读 HOME）下会直接让 MSBuild 报 MSB4018 失败，发布脚本里关掉。
+export AVALONIA_TELEMETRY_OPTOUT=1
 
 OUT="release/win-x64"
 echo ">> 发布 win-x64 自包含单文件程序到 $OUT ..."
 rm -rf "$OUT"
+# 体积相关参数（实测依据见《HarpAutoPlayer-体积分析报告.md》，_sizecheck/ 保留原始日志）：
+#   EnableCompressionInSingleFile : exe 内部 deflate，94 MB → 43 MB（不影响下载体积，zip 本就压过）
+#   PublishTrimmed + TrimMode=partial : 按调用图删掉用不到的 BCL，下载 39.6 MB → 15.5 MB（主要收益）
+#   DebugType=none : 不嵌入 PDB
+# 注意：不要开 TrimMode=full（只再省 0.5 MB，但会裁到反射式绑定/JSON）；
+#       也不要开 InvariantGlobalization / UseSystemResourceKeys（合计仅 0.4 MB，却会改变文化与异常文本行为）。
 "$DOTNET" publish HarpAutoPlayer.csproj -c Release \
     -r win-x64 --self-contained true \
     -p:PublishSingleFile=true \
     -p:IncludeNativeLibrariesForSelfExtract=true \
     -p:ExcludeNativeLibrariesFromSingleFile=false \
+    -p:EnableCompressionInSingleFile=true \
+    -p:PublishTrimmed=true -p:TrimMode=partial \
+    -p:DebugType=none \
     -o "$OUT"
 
 # 清掉交叉编译时被一并复制过来的其它平台原生库（macOS/Linux），

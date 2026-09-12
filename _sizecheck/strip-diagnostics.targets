@@ -1,0 +1,13 @@
+<Project>
+  <!-- 从发布清单里剔除调试/诊断原生库。仅在本实验中通过
+       -p:CustomAfterMicrosoftCommonTargets= 注入，不修改 HarpAutoPlayer.csproj。 -->
+  <Target Name="StripDiagnosticNatives" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+        Condition="$([System.String]::Copy('%(Filename)').StartsWith('mscordaccore'))
+                Or '%(Filename)' == 'mscordbi'
+                Or '%(Filename)' == 'Microsoft.DiaSymReader.Native.amd64'
+                Or '%(Filename)' == 'createdump'" />
+    </ItemGroup>
+  </Target>
+</Project>

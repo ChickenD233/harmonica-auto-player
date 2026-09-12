@@ -247,12 +247,13 @@ public static class MelodyExtractor
         double maxDur = voices.Max(v => v.MeanDuration);
         double maxDensity = voices.Max(v => v.Density);
 
+        var scores = new double[voices.Count];
         int bestIdx = 0;
         double bestScore = double.MinValue;
         for (int i = 0; i < voices.Count; i++)
         {
-            double s = ScoreVoice(voices[i], allMean, maxDur, maxDensity);
-            if (s > bestScore) { bestScore = s; bestIdx = i; }
+            scores[i] = ScoreVoice(voices[i], allMean, maxDur, maxDensity);
+            if (scores[i] > bestScore) { bestScore = scores[i]; bestIdx = i; }
         }
 
         // 安全阀：最高声部本身高度级进、时值不短 → 主旋律本来就在最高声部，
@@ -270,6 +271,60 @@ public static class MelodyExtractor
                 return HighestPerCluster(list);
         }
 
-        return MergeSamePitch(voices[bestIdx].Notes);
+        // 关键修正：只取一条声部会截断谱面。
+        // 真实歌曲的旋律被换气休止切成多条声部，声部数上限又把中后段都并进最后一条，
+        // 于是得分最高的那条常常只覆盖歌曲的一段 —— 用户看到的「加载不完全」。
+        // 把「与已选在时间上不重叠、且同样像旋律」的声部一并取回。
+        var picked = PickMelodyVoices(voices, scores, bestIdx);
+        var merged = new List<RawNote>();
+        foreach (int i in picked) merged.AddRange(voices[i].Notes);
+        return MergeSamePitch(merged.OrderBy(x => x.Start));
+    }
+
+    /// <summary>
+    /// 从最佳声部出发，反复并入「得分接近且与已选不重叠」的声部，直到无以为继。
+    /// 这样既能保住声部分离的收益，又不会丢掉被休止切开的乐句。
+    /// </summary>
+    private static List<int> PickMelodyVoices(List<Voice> voices, double[] scores, int bestIdx)
+    {
+        var picked = new List<int> { bestIdx };
+        var occupied = new List<RawNote>(voices[bestIdx].Notes);
+        double floor = scores[bestIdx] - 25;      // 明显不像旋律的声部不要
+
+        bool added = true;
+        while (added)
+        {
+            added = false;
+            int cand = -1;
+            double candScore = double.MinValue;
+            for (int i = 0; i < voices.Count; i++)
+            {
+                if (picked.Contains(i)) continue;
+                if (voices[i].Notes.Count < 2) continue;
+                if (scores[i] < floor) continue;
+                if (OverlapRatio(voices[i].Notes, occupied) > 0.15) continue;   // 与已选在时间上打架
+                if (scores[i] > candScore) { candScore = scores[i]; cand = i; }
+            }
+            if (cand < 0) break;
+            picked.Add(cand);
+            occupied.AddRange(voices[cand].Notes);
+            added = true;
+        }
+        return picked;
+    }
+
+    /// <summary>这条声部有多少比例的音落在「已选声部正在响」的时间里。</summary>
+    private static double OverlapRatio(List<RawNote> notes, List<RawNote> occupied)
+    {
+        if (notes.Count == 0) return 0;
+        int hit = 0;
+        foreach (var n in notes)
+        {
+            foreach (var o in occupied)
+            {
+                if (n.Start < o.End - Eps && o.Start < n.End - Eps) { hit++; break; }
+            }
+        }
+        return (double)hit / notes.Count;
     }
 }

@@ -21,22 +21,27 @@ public sealed class PianoRoll : Control
     private IReadOnlyList<RawNote> _notes = Array.Empty<RawNote>();
     private HashSet<int> _inRange = new();
     private double _total;
+
+    // 可见时间窗。整首歌挤进几百像素时一个音只有 1-2px，不缩放就没法编辑。
+    private double _viewFrom, _viewTo;
+    private bool _zoomed;                       // 用户缩放过就不再自动适配
     private double _position;
     private int _selected = -1;
     private int _hover = -1;
 
     // 缓存音符条几何：只有宽度/总长/音域/音符数变化时才重建
     private GeometryGroup? _barsOk, _barsSkip;
-    private double _builtW = -1, _builtTotal = -1;
+    private double _builtW = -1, _builtFrom = double.NaN, _builtTo = double.NaN;
     private int _builtLo = int.MinValue, _builtHi = int.MinValue, _builtCount = -1;
 
-    private enum DragMode { None, Seek, Move, Resize }
+    private enum DragMode { None, Seek, Move, Resize, Pan }
     private DragMode _mode = DragMode.None;
     private int _dragIndex = -1;
     private double _grabOffset;                 // 按下点与音符起点的差（秒）
     private int _dragPitch;
     private double _dragStart, _dragEnd;
     private bool _dragged;
+    private double _panStartX, _panStartFrom;
 
     private static readonly IBrush Bg = new SolidColorBrush(Color.Parse("#F7F9FC"));
     private static readonly IPen BorderPen = new Pen(new SolidColorBrush(Color.Parse("#DDE3EA")), 1);
@@ -80,6 +85,8 @@ public sealed class PianoRoll : Control
         _notes = notes ?? Array.Empty<RawNote>();
         _inRange = new HashSet<int>(inRangePitches ?? Array.Empty<int>());
         _total = Math.Max(totalSeconds, 0.5);
+        if (!_zoomed) { _viewFrom = 0; _viewTo = _total; }
+        else ClampView();
         if (_selected >= _notes.Count) _selected = -1;
         _hover = -1;
         InvalidateVisual();
@@ -92,6 +99,53 @@ public sealed class PianoRoll : Control
         _position = v;
         InvalidateVisual();
     }
+
+    /// <summary>显示全曲。载入新文件后调用。</summary>
+    public void FitAll()
+    {
+        _zoomed = false;
+        _viewFrom = 0;
+        _viewTo = _total;
+        InvalidateVisual();
+    }
+
+    /// <summary>以某时刻为锚点缩放。factor &lt; 1 放大。</summary>
+    public void Zoom(double factor, double anchorSeconds)
+    {
+        double span = ViewSpan;
+        double newSpan = Math.Clamp(span * factor, 0.35, Math.Max(_total, 0.5));
+        double frac = (anchorSeconds - _viewFrom) / span;
+        _viewFrom = anchorSeconds - frac * newSpan;
+        _viewTo = _viewFrom + newSpan;
+        _zoomed = true;
+        ClampView();
+        InvalidateVisual();
+    }
+
+    /// <summary>把视口约束在 [0, 总长] 内，并保证不小于 0.35 秒。</summary>
+    private void ClampView()
+    {
+        double span = Math.Min(ViewSpan, Math.Max(_total, 0.5));
+        if (_viewFrom < 0) _viewFrom = 0;
+        if (_viewFrom + span > _total) _viewFrom = Math.Max(0, _total - span);
+        _viewTo = _viewFrom + span;
+    }
+
+    public double ViewFrom => _viewFrom;
+    public double ViewTo => _viewTo;
+
+    /// <summary>整体平移视口（工具栏按钮用）。</summary>
+    public void PanBy(double seconds)
+    {
+        double span = ViewSpan;
+        _viewFrom = Math.Clamp(_viewFrom + seconds, 0, Math.Max(0, _total - span));
+        _viewTo = _viewFrom + span;
+        _zoomed = true;
+        InvalidateVisual();
+    }
+
+    /// <summary>以视口中心为锚点缩放（工具栏按钮用）。</summary>
+    public void ZoomCenter(double factor) => Zoom(factor, _viewFrom + ViewSpan / 2);
 
     public void Select(int index)
     {
@@ -118,9 +172,11 @@ public sealed class PianoRoll : Control
 
     private double RowH((int Lo, int Hi) r) => PlotH / Math.Max(1, r.Hi - r.Lo + 1);
 
-    private double XOf(double sec) => PadX + Math.Clamp(sec, 0, _total) / _total * PlotW;
+    private double ViewSpan => Math.Max(1e-6, _viewTo - _viewFrom);
 
-    private double TimeAt(double x) => Math.Clamp((x - PadX) / PlotW, 0, 1) * _total;
+    private double XOf(double sec) => PadX + (sec - _viewFrom) / ViewSpan * PlotW;
+
+    private double TimeAt(double x) => _viewFrom + Math.Clamp((x - PadX) / PlotW, 0, 1) * ViewSpan;
 
     private int PitchAt(double y, (int Lo, int Hi) r)
     {
@@ -141,19 +197,27 @@ public sealed class PianoRoll : Control
     private double Snap(double sec) =>
         !SnapEnabled || SnapSeconds <= 0 ? sec : Math.Round(sec / SnapSeconds) * SnapSeconds;
 
-    /// <summary>命中音符：从后往前（后画的在上面）。没中返回 -1。</summary>
+    /// <summary>
+    /// 命中音符。先找完全落在矩形内的；音域宽时每行可能不到 2px，
+    /// 这时退化为「横向必须在音符范围内，纵向取最近的一行」。
+    /// </summary>
     private int HitTest(Point p)
     {
-        var r = PitchRange();
-        int pitch = PitchAt(p.Y, r);
+        int best = -1;
+        double bestDy = double.MaxValue;
         for (int i = _notes.Count - 1; i >= 0; i--)
         {
             var n = _notes[i];
-            if (n.Pitch != pitch) continue;
-            var rect = RectOf(n.Pitch, n.Start, n.End).Inflate(2);   // 放宽 2px 更好点
-            if (rect.Contains(p)) return i;
+            if (n.End < _viewFrom || n.Start > _viewTo) continue;
+            var rect = RectOf(n.Pitch, n.Start, n.End);
+            if (rect.Inflate(3).Contains(p)) return i;
+            if (p.X >= rect.X - 4 && p.X <= rect.Right + 4)
+            {
+                double dy = Math.Abs(rect.Center.Y - p.Y);
+                if (dy < bestDy) { bestDy = dy; best = i; }
+            }
         }
-        return -1;
+        return bestDy <= 12 ? best : -1;
     }
 
     // ================= 绘制 =================
@@ -162,7 +226,7 @@ public sealed class PianoRoll : Control
     {
         var (lo, hi) = PitchRange();
         if (_barsOk is not null && Math.Abs(_builtW - Bounds.Width) < 0.5
-            && Math.Abs(_builtTotal - _total) < 1e-9
+            && Math.Abs(_builtFrom - _viewFrom) < 1e-9 && Math.Abs(_builtTo - _viewTo) < 1e-9
             && _builtLo == lo && _builtHi == hi && _builtCount == _notes.Count)
             return;
 
@@ -173,6 +237,7 @@ public sealed class PianoRoll : Control
         foreach (var n in _notes)
         {
             if (n.End <= n.Start) continue;
+            if (n.End < _viewFrom || n.Start > _viewTo) continue;   // 视口外不画
             double x0 = XOf(n.Start), x1 = XOf(n.End);
             double yc = hi == lo ? PadY + PlotH / 2 : PadY + (hi - n.Pitch) * rowH + rowH / 2;
             var rect = new Rect(x0, yc - barH / 2, Math.Max(2.5, x1 - x0), barH);
@@ -181,7 +246,8 @@ public sealed class PianoRoll : Control
         _barsOk = ok;
         _barsSkip = skip;
         _builtW = Bounds.Width;
-        _builtTotal = _total;
+        _builtFrom = _viewFrom;
+        _builtTo = _viewTo;
         _builtLo = lo;
         _builtHi = hi;
         _builtCount = _notes.Count;
@@ -195,8 +261,9 @@ public sealed class PianoRoll : Control
 
         EnsureBars();
 
-        double step = NiceStep(_total);
-        for (double t = step; t < _total; t += step)
+        double step = NiceStep(ViewSpan);
+        double t0 = Math.Ceiling(_viewFrom / step) * step;
+        for (double t = t0; t <= _viewTo; t += step)
         {
             double x = XOf(t);
             ctx.DrawLine(GridPen, new Point(x, PadY), new Point(x, PadY + PlotH));
@@ -290,6 +357,16 @@ public sealed class PianoRoll : Control
         var props = e.GetCurrentPoint(this).Properties;
         int hit = HitTest(p);
 
+        if (props.IsMiddleButtonPressed)
+        {
+            _mode = DragMode.Pan;
+            _panStartX = p.X;
+            _panStartFrom = _viewFrom;
+            e.Pointer.Capture(this);
+            Cursor = new Cursor(StandardCursorType.SizeWestEast);
+            e.Handled = true;
+            return;
+        }
         if (props.IsRightButtonPressed)
         {
             if (hit >= 0) { Select(hit); NoteDeleteRequested?.Invoke(hit); }
@@ -356,6 +433,17 @@ public sealed class PianoRoll : Control
                 SeekPreview?.Invoke(TimeAt(p.X));
                 break;
 
+            case DragMode.Pan:
+            {
+                double span = ViewSpan;
+                double dx = (p.X - _panStartX) / PlotW * span;
+                _viewFrom = Math.Clamp(_panStartFrom - dx, 0, Math.Max(0, _total - span));
+                _viewTo = _viewFrom + span;
+                _zoomed = true;
+                InvalidateVisual();
+                break;
+            }
+
             case DragMode.Move when _dragIndex >= 0 && _dragIndex < _notes.Count:
             {
                 var n = _notes[_dragIndex];
@@ -401,6 +489,17 @@ public sealed class PianoRoll : Control
         _dragIndex = -1;
         _dragged = false;
         InvalidateVisual();
+    }
+
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+        if (_total <= 0) return;
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+            PanBy(-Math.Sign(e.Delta.Y) * ViewSpan * 0.2);
+        else
+            Zoom(e.Delta.Y > 0 ? 0.8 : 1.25, TimeAt(e.GetPosition(this).X));
+        e.Handled = true;
     }
 
     protected override void OnPointerExited(PointerEventArgs e)

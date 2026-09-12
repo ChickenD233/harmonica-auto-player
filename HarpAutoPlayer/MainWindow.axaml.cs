@@ -17,7 +17,6 @@ namespace HarpAutoPlayer;
 public partial class MainWindow : Window
 {
     private readonly ObservableCollection<TrackRowVM> _tracks = new();
-    private readonly ObservableCollection<string> _log = new();
     private readonly List<TrackRowVM> _mixOrder = new();   // 勾选合奏的顺序 = 主次（先勾=主）
 
     private ParsedMidi? _parsed;
@@ -34,6 +33,7 @@ public partial class MainWindow : Window
     private bool _seeking;          // 用户正在拖进度条
     private List<MappedNote> _previewNotes = new();   // 全量音符（含超音域），供卷帘与定位使用
     private double _previewSeconds;                   // 未播放时的定位秒数
+    private int _noteCount;                           // 当前谱面音符数（避免每次点击都重算）
     private readonly ScoreEditor _editor = new();     // 手动编辑后的谱面
     private bool _editing;                            // true = 用编辑结果，不再用自动提取
     private bool _liveQueued;       // 已排队待应用的实时移调
@@ -56,7 +56,6 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         TrackList.ItemsSource = _tracks;
-        LogList.ItemsSource = _log;
 
         // 倒计时下拉：0/3/5/10 秒，默认 3 秒
         CountdownCombo.ItemsSource = new List<string> { "0秒(立即)", "3秒", "5秒", "10秒" };
@@ -313,9 +312,8 @@ public partial class MainWindow : Window
     private void InsertLog(string msg)
     {
         string line = $"[{DateTime.Now:HH:mm:ss}] {msg}";
-        _log.Insert(0, line);
-        while (_log.Count > 400) _log.RemoveAt(_log.Count - 1);
-        Persist.LogFile.Append(line);   // 落盘
+        if (TxtLastMsg != null) TxtLastMsg.Text = msg;   // 界面只留最近一条
+        Persist.LogFile.Append(line);                    // 完整历史仍然落盘
     }
 
     private void ScheduleSave()
@@ -606,10 +604,13 @@ public partial class MainWindow : Window
         BtnRedo.IsEnabled = _editing && _editor.CanRedo;
         BtnDeleteNote.IsEnabled = Roll.SelectedIndex >= 0;
         BtnResetEdits.IsEnabled = _editing;
-        BtnExportMidi.IsEnabled = GetActiveRawNotes().Count > 0;
+        BtnExportMidi.IsEnabled = _noteCount > 0;
     }
 
     private void Undo_Click(object? sender, RoutedEventArgs e) => DoUndo();
+    private void ZoomIn_Click(object? sender, RoutedEventArgs e) => Roll.ZoomCenter(0.6);
+    private void ZoomOut_Click(object? sender, RoutedEventArgs e) => Roll.ZoomCenter(1.67);
+    private void ZoomFit_Click(object? sender, RoutedEventArgs e) => Roll.FitAll();
     private void Redo_Click(object? sender, RoutedEventArgs e) => DoRedo();
     private void DeleteNote_Click(object? sender, RoutedEventArgs e) => DeleteSelectedNote();
 
@@ -730,6 +731,7 @@ public partial class MainWindow : Window
 
                 _selected = null;
                 _previewSeconds = 0;      // 换歌必须回到 0，否则上一首的位置会夹到新曲末尾 → 一播放就结束
+                Roll.FitAll();
                 ResetEdits();
                 ChooseRecommendedTrack();
                 RefreshPreview();
@@ -1222,6 +1224,7 @@ public partial class MainWindow : Window
         double totalSec = PreviewTotalSeconds;
         _previewSeconds = Math.Clamp(_previewSeconds, 0, totalSec);
         // 卷帘轴上留 2% 余量，末尾才好双击加音
+        _noteCount = raw.Count;
         Roll.SetNotes(raw, m.Notes.Where(n => n.InRange).Select(n => n.Pitch).Distinct(), totalSec * 1.02 + 0.3);
         Roll.SetPosition(_previewSeconds);
         SliderProgress.Maximum = Math.Max(0.1, totalSec);

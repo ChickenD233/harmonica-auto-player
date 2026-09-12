@@ -112,6 +112,41 @@ public sealed class PlaybackEngine : IDisposable
     /// <summary>本轮播放的输入时序诊断（由 Execute 在派发时统计）。</summary>
     public InputTimingProbe Probe { get; } = new();
 
+    /// <summary>对外暴露的调度事件（音乐时间，秒）。用于导出按键表/宏，保证与实际演奏一致。</summary>
+    public sealed record ScheduledEvent(double MusicTime, string Kind, char Key, bool Down)
+    {
+        /// <summary>便于人读的按键名（逗号显示为「,」）。</summary>
+        public string KeyLabel => Key == ' ' ? "" : (Key == ',' ? "," : Key.ToString());
+    }
+
+    /// <summary>
+    /// 按指定时序预算构建"整首曲子"的事件表（不做实际发送）。
+    /// 与 <see cref="Play"/> 走同一套 BuildSchedule，因此导出的按键表与实际演奏完全一致。
+    /// </summary>
+    public static List<ScheduledEvent> BuildSchedulePreview(
+        IReadOnlyList<MappedNote> notes, InputTiming? timing = null, double speed = 1.0)
+    {
+        var engine = new PlaybackEngine { Timing = timing ?? InputTiming.Standard };
+        var inRange = notes.Where(n => n.InRange).ToList();
+        var (evs, _) = engine.BuildSchedule(inRange, breath: false, startMods: ModState.None);
+
+        double safeSpeed = speed <= 0 ? 1.0 : Math.Clamp(speed, 0.1, 5.0);
+        var list = new List<ScheduledEvent>(evs.Count);
+        foreach (var e in evs)
+        {
+            string kind = e.Kind switch
+            {
+                K_Key => "key",
+                K_MouseLeft => "mouse-left",
+                K_MouseRight => "mouse-right",
+                _ => "mouse-middle"
+            };
+            // 事件表用音乐时间；除以速度得到实际物理播放时刻（毫秒）
+            list.Add(new ScheduledEvent(e.T / safeSpeed, kind, e.Code, e.Down));
+        }
+        return list;
+    }
+
     /// <summary>开始播放。notes 为映射后 InRange 的音符（音乐时间，未乘速度）。</summary>
     public void Play(IReadOnlyList<MappedNote> notes, double speed, double leadMs, bool loop, bool breath = false)
     {

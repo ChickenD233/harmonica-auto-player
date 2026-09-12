@@ -4,7 +4,10 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
-        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+        <!-- requireAdministrator：模拟按键受 UIPI 限制，
+             若游戏以管理员运行而本程序不是，按键会被系统直接拦截。
+             强制以管理员启动可消除这一整类「发不进游戏」的问题。 -->
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>

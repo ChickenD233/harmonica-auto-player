@@ -5,7 +5,9 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using System.Text;
 using HarpAutoPlayer.Engine;
+using HarpAutoPlayer.Input;
 using HarpAutoPlayer.Midi;
 using HarpAutoPlayer.Persist;
 
@@ -67,6 +69,13 @@ public partial class MainWindow : Window
         // 输入兼容档位：稳健 / 标准 / 极限（决定修饰键与音键之间的物理时间余量）
         TimingCombo.ItemsSource = InputTiming.Names;
         TimingCombo.SelectedIndex = 1;          // 标准
+
+        // 导出格式：罗技 G HUB 脚本 / 通用 CSV / 纯文本按键表
+        ExportFormatCombo.ItemsSource = new List<string>
+        {
+            "罗技 G HUB 脚本 (.lua)", "通用 CSV (.csv)", "纯文本按键表 (.txt)"
+        };
+        ExportFormatCombo.SelectedIndex = 0;
 
         // —— 记住上次设置 ——
         _cfg = AppConfig.Load();
@@ -606,6 +615,70 @@ public partial class MainWindow : Window
         GetActiveRawNotes().Count == 0 ? new MappingResult() : MapAt(CurrentTranspose);
 
     /// <summary>一键移调：找让空拍（超音域）最少的移调量。</summary>
+    // ================= 导出按键表 / 宏 =================
+
+    private async void BtnExport_Click(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var map = BuildMapping();
+            var playable = map.Notes.Where(n => n.InRange).ToList();
+            if (playable.Count == 0)
+            {
+                InsertLog("没有可演奏的音，无法导出。请先调整「移调」或换一行。");
+                return;
+            }
+
+            var format = ExportFormatCombo.SelectedIndex switch
+            {
+                1 => MacroExporter.Format.KeystrokeCsv,
+                2 => MacroExporter.Format.KeystrokeText,
+                _ => MacroExporter.Format.LogitechGHub
+            };
+            double speed = SliderSpeed.Value / 100.0;
+            var timing = InputTiming.FromIndex(TimingCombo.SelectedIndex);
+
+            string songName = _parsed == null ? "" : Path.GetFileNameWithoutExtension(_parsed.FilePath);
+            string content = MacroExporter.Build(playable, format, speed, timing, songName);
+
+            var (nCount, nEvents, seconds) = MacroExporter.Summarize(playable, speed, timing);
+            string suggested = (string.IsNullOrWhiteSpace(songName) ? "harp" : songName) +
+                               MacroExporter.Extension(format);
+
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "导出按键表",
+                SuggestedFileName = suggested,
+                DefaultExtension = MacroExporter.Extension(format).TrimStart('.'),
+                FileTypeChoices = new List<FilePickerFileType>
+                {
+                    new("导出文件") { Patterns = new List<string> { "*" + MacroExporter.Extension(format) } }
+                }
+            });
+            if (file == null) return;
+
+            string outPath = file.TryGetLocalPath() ?? "";
+            if (string.IsNullOrEmpty(outPath))
+            {
+                InsertLog("导出失败：拿不到目标路径。");
+                return;
+            }
+            await File.WriteAllTextAsync(outPath, content, new UTF8Encoding(true));
+
+            InsertLog($"已导出按键表：{playable.Count} 个音 / {nEvents} 个事件 / 时长 {seconds:F1}s" +
+                      $"（速度 {speed * 100:F0}%、时序档位 {timing.Name}）");
+            InsertLog($"　文件：{outPath}");
+            if (format == MacroExporter.Format.LogitechGHub)
+                InsertLog("　罗技 G HUB 用法：G HUB → 设备 → 游戏与应用程序 → 添加游戏 → 编写脚本 → 编辑脚本 → 整段粘贴保存。");
+            else
+                InsertLog("　提示：雷蛇 Synapse 的宏文件是私有格式（无官方规范），请用本文件配合其宏录制，或使用支持导入按键时序的工具。");
+        }
+        catch (Exception ex)
+        {
+            InsertLog($"导出失败：{ex.Message}");
+        }
+    }
+
     private void BtnAutoTranspose_Click(object? sender, RoutedEventArgs e)
     {
         if (_busy || GetActiveRawNotes().Count == 0) return;
@@ -676,6 +749,33 @@ public partial class MainWindow : Window
     private void Breath_Changed(object? sender, RoutedEventArgs e)
     {
         ScheduleSave();
+    }
+
+    // ================= 播放前自检 =================
+
+    /// <summary>
+    /// 检查"模拟按键能不能真的送进游戏"，并把结果写进日志。
+    /// 检查项：管理员权限、前台窗口是不是本程序、游戏与本程序的权限是否匹配、前台输入法。
+    /// </summary>
+    private void RunPreflight()
+    {
+        try
+        {
+            var report = PreflightCheck.Run(SelfHwnd);
+            bool hasProblem = report.HasProblem;
+
+            InsertLog(hasProblem ? "播放前自检 —— 发现需要注意的地方：" : "播放前自检：全部正常。");
+            foreach (var line in PreflightCheck.ToLogLines(report)) InsertLog(line);
+
+            if (hasProblem)
+                LblWarn.Text = "播放前自检发现问题：请看右下日志（多半是没用管理员运行、或输入法还是中文）。";
+            else
+                LblWarn.Text = "";
+        }
+        catch (Exception ex)
+        {
+            InsertLog($"播放前自检未能完成（不影响播放）：{ex.Message}");
+        }
     }
 
     // ================= 自动检查更新 =================
@@ -900,7 +1000,10 @@ public partial class MainWindow : Window
         engine.Timing = InputTiming.FromIndex(TimingCombo.SelectedIndex);
         engine.Play(_playNotes, speed, FixedLeadMs, loop, breath);
         SliderProgress.Maximum = Math.Max(0.1, engine.TotalSeconds);
-        string fgTitle = Input.InputSender.ForegroundWindowTitle;
+        // 播放前自检：把"按键发不进游戏"的常见原因直接指出来，省得用户逐个猜
+        RunPreflight();
+
+        string fgTitle = InputSender.ForegroundWindowTitle;
         InsertLog($"开始吹奏；当前前台窗口：{(string.IsNullOrEmpty(fgTitle) ? "（读不到，可能未切到游戏）" : fgTitle)}");
         LblStatus.Foreground = Avalonia.Media.Brushes.SeaGreen;
         LblStatus.FontSize = 21;
@@ -1015,6 +1118,7 @@ public partial class MainWindow : Window
         ChkAutoMinimize.IsEnabled = !busy;
         CountdownCombo.IsEnabled = !busy;
         BtnAutoTranspose.IsEnabled = !busy;
+        BtnExport.IsEnabled = !busy && ActiveRows().Count > 0;
         UpdateTransportUi();
         // 速度 / 移调两个滑条：空闲与播放中都可调（播放中实时生效）
         SliderSpeed.IsEnabled = true;

@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>HarpAutoPlayer</RootNamespace>
     <AssemblyName>HarpAutoPlayer</AssemblyName>
-    <Version>1.0.8</Version>
+    <Version>1.0.9</Version>
     <Company>HarpAutoPlayer</Company>
     <Product>口琴自动演奏器</Product>
     <Description>导入 MIDI 主旋律并在《三角洲行动》口琴上自动吹奏（Windows）</Description>

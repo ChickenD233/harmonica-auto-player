@@ -214,6 +214,15 @@
                   Padding="10,4" Margin="0,0,24,4" VerticalAlignment="Center"
                   Click="BtnAutoTranspose_Click" ToolTip.Tip="自动找到让所有音都在口琴音域内的移调量"/>
           <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,24,4">
+            <Button x:Name="BtnExport" Content="导出按键表" FontSize="12.5"
+                    Padding="10,4" VerticalAlignment="Center" IsEnabled="False"
+                    Click="BtnExport_Click"
+                    ToolTip.Tip="把这首曲子的按键时序导出成文件：罗技 G HUB 的 Lua 脚本 / 通用 CSV / 纯文本按键表。导出内容与实际演奏完全一致"/>
+            <ComboBox x:Name="ExportFormatCombo" Width="150" FontSize="12.5"
+                      VerticalAlignment="Center"
+                      ToolTip.Tip="导出格式：罗技 G HUB 脚本可直接粘贴进 G HUB；CSV / 文本可用于其它工具或照着录制"/>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,24,4">
             <TextBlock Text="倒计时" FontSize="13" VerticalAlignment="Center" MinWidth="34"/>
             <ComboBox x:Name="CountdownCombo" Width="104" FontSize="12.5" SelectedIndex="1"
                       VerticalAlignment="Center" SelectionChanged="CountdownCombo_Changed"/>

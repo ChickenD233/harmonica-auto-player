@@ -443,33 +443,25 @@
     </Grid>
   </DockPanel>
 
-  <!-- 首次启动浮层，点「知道了」后不再弹出 -->
+  <!-- 首次启动浮层。点「知道了」后写入设置，之后不再弹出。 -->
   <Border x:Name="QuickStartOverlay" IsVisible="False" Background="#66101828" CornerRadius="0">
-    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="600" Margin="24">
-      <Border Classes="card" Padding="26,22">
-        <StackPanel Spacing="10">
-          <TextBlock Text="快速上手（只显示一次）" FontSize="18" FontWeight="Bold"/>
-          <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource FontBody}" LineHeight="22">
-            <Run FontWeight="Bold" Text="① 打开 MIDI"/><Run Text="：点「打开 MIDI 文件…」。绿点是推荐的主旋律轨，点其它行可换；"/>
-          </TextBlock>
-          <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource FontBody}" LineHeight="22">
-            <Run FontWeight="Bold" Text="② 开始"/><Run Text="：点「▶ 播放」或按 F6，在倒计时结束前切到游戏并装备口琴；"/>
-          </TextBlock>
-          <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource FontBody}" LineHeight="22">
-            <Run FontWeight="Bold" Text="③ 暂停 / 继续"/><Run Text="：只用 F6。空闲=开始，播放=暂停，暂停=继续。"/>
-          </TextBlock>
+    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="520" Margin="24">
+      <Border Classes="card" Padding="24,20">
+        <StackPanel Spacing="9">
+          <TextBlock Text="快速上手" FontSize="17" FontWeight="Bold"/>
+          <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource FontBody}" LineHeight="21"
+                     Text="1. 打开 MIDI。绿点是推荐的主旋律轨。"/>
+          <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource FontBody}" LineHeight="21"
+                     Text="2. 按 F6 播放。倒计时结束前切到游戏，装备口琴。"/>
+          <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource FontBody}" LineHeight="21"
+                     Text="3. F6 一个键四用：空闲开始，播放暂停，再按继续，倒计时取消。"/>
           <Border Background="{DynamicResource BrushWarnSoft}" BorderBrush="{DynamicResource BrushWarnBorder}"
-                  BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,4,0,0">
-            <StackPanel Spacing="4">
-              <TextBlock Text="注意：" FontWeight="Bold" FontSize="{DynamicResource FontBody}" Foreground="{DynamicResource BrushWarn}"/>
-              <TextBlock Text="· 游戏用窗口化，不要用全屏独占" FontSize="{DynamicResource FontBody}"/>
-              <TextBlock Text="· 输入法切英文；人物原地站好再开始" FontSize="{DynamicResource FontBody}"/>
-              <TextBlock Text="· 没反应先点一下游戏画面；游戏用管理员时本程序也要用管理员" FontSize="{DynamicResource FontBody}"/>
-              <TextBlock Text="· 想验证按键：打开仓库里的 口琴钢琴测试台.html" FontSize="{DynamicResource FontBody}"/>
-            </StackPanel>
+                  BorderThickness="1" CornerRadius="8" Padding="12,9" Margin="0,3,0,0">
+            <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource FontSmall}" LineHeight="19"
+                       Text="游戏用窗口化。输入法切英文。没反应就先点一下游戏画面。"/>
           </Border>
-          <Button x:Name="BtnQuickStartOk" Content="知道了，开始使用" Classes="accent"
-                  HorizontalAlignment="Right" Padding="18,8" FontSize="{DynamicResource FontTitle}" Margin="0,6,0,0"
+          <Button x:Name="BtnQuickStartOk" Content="知道了" Classes="accent"
+                  HorizontalAlignment="Right" Padding="18,7" FontSize="{DynamicResource FontTitle}" Margin="0,4,0,0"
                   Click="QuickStartOk_Click"/>
         </StackPanel>
       </Border>

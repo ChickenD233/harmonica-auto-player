@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace HarpAutoPlayer.Persist;
 
@@ -29,7 +30,7 @@ public sealed class AppConfig
         {
             if (existed)
             {
-                var cfg = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(FilePath));
+                var cfg = JsonSerializer.Deserialize(File.ReadAllText(FilePath), ConfigJson.Default.AppConfig);
                 if (cfg != null)
                 {
                     // 老用户升级：设置文件已存在就不算“首次”，不弹快速上手
@@ -38,7 +39,7 @@ public sealed class AppConfig
                 }
             }
         }
-        catch { /* 配置损坏则用默认 */ }
+        catch (Exception ex) { LogFile.Append("[设置] 读取失败，用默认值：" + ex.Message); }
         return new AppConfig();
     }
 
@@ -47,10 +48,24 @@ public sealed class AppConfig
         try
         {
             Directory.CreateDirectory(DirPath);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(this, ConfigJson.Default.AppConfig));
         }
-        catch { /* 写失败忽略 */ }
+        catch (Exception ex) { LogFile.Append("[设置] 保存失败：" + ex.Message); }
     }
+}
+
+/// <summary>
+/// 源生成的 JSON 上下文。设置读写必须走它，不能用 JsonSerializer 的反射重载。
+///
+/// 发布开了裁剪（PublishTrimmed + TrimMode=partial）。反射式序列化依赖的元数据会被裁掉，
+/// 运行时抛异常。而 Save / Load 原先都静默吞掉异常 —— 结果是设置从未写盘，
+/// 表现为「每次启动都弹快速上手」，而且速度、移调、热键全都不记忆。
+/// 源生成在编译期产出读写代码，不依赖反射，裁剪下也正常。
+/// </summary>
+[JsonSourceGenerationOptions(WriteIndented = true)]
+[JsonSerializable(typeof(AppConfig))]
+internal sealed partial class ConfigJson : JsonSerializerContext
+{
 }
 
 /// <summary>本地运行日志（便于回传排查）。</summary>

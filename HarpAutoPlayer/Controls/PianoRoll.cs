@@ -34,7 +34,9 @@ public sealed class PianoRoll : Control
     private const double EdgeGrabPx = 6;     // 改长度的抓取带宽度（上限）
     private const double MinNoteSeconds = 0.03;
     private const double DragThreshold = 4;  // 超过它才算"拖"，否则算"点"
-    private const int FallbackLo = 60, FallbackHi = 72;
+    private const int FallbackLo = 48, FallbackHi = 48 + MinSpan;   // C3 起，4 个八度
+    /// <summary>可见音域的最小跨度（半音数）。4 个八度 = 48 个半音，即 hi-lo = 47。</summary>
+    private const int MinSpan = 47;
     private int _lastLo = FallbackLo, _lastHi = FallbackHi;   // 上一次实际用过的音域
 
     private List<RawNote> _notes = new();
@@ -320,12 +322,18 @@ public sealed class PianoRoll : Control
         if (notes.Count == 0) return (FallbackLo, FallbackHi);
         int lo = int.MaxValue, hi = int.MinValue;
         foreach (var n in notes) { if (n.Pitch < lo) lo = n.Pitch; if (n.Pitch > hi) hi = n.Pitch; }
-        while (hi - lo < 11)
-        {
-            if (lo > 0) lo--;
-            if (hi - lo < 11 && hi < 127) hi++;
-            if (lo == 0 && hi == 127) break;
-        }
+
+        // 最小可见音域 = 4 个八度。口琴本身能吹 3 个八度，如果画面只按谱面实际音高裁到
+        // 一两个八度，用户就看不到可吹范围内的其它音高，也就没法把音符拖过去改。
+        // 先按实际音高居中，再向两边扩到 MinSpan。
+        int span = MinSpan;
+        int center = (lo + hi) / 2;
+        lo = center - span / 2;
+        hi = lo + span;
+        // 夹到合法 MIDI 音高
+        if (lo < 0) { hi -= lo; lo = 0; }
+        if (hi > 127) { lo -= hi - 127; hi = 127; }
+        if (lo < 0) lo = 0;
         return (lo, hi);
     }
 

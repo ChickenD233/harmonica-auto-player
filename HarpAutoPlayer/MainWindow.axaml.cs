@@ -1424,7 +1424,14 @@ public partial class MainWindow : Window
             LblWarn.Foreground = warnColor;
             _previewNotes = new List<MappedNote>();
             _previewSeconds = 0;
-            ResetSeekUi();
+
+            // 只有"根本没载入文件"才清空卷帘。
+            // 已载入但一个声部都没勾选时不能清：演奏引擎在开始播放时就把音符复制走了，
+            // 清空会让左键栏掉回兜底音域（正好是 C4–C5），并让正在响的音符全部消失 ——
+            // 表现就是"能出声但看不到音符"。保留卷帘内容，让画面对得上耳朵。
+            if (_parsed == null) ResetSeekUi();
+            else InsertLog("当前没有任何声部被勾选，卷帘保留上一次的内容。勾选一行即可恢复。");
+
             UpdateEditUi();
             UpdateTransportUi();
             return;

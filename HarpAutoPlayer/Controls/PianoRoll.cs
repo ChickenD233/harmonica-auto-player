@@ -35,6 +35,7 @@ public sealed class PianoRoll : Control
     private const double MinNoteSeconds = 0.03;
     private const double DragThreshold = 4;  // 超过它才算"拖"，否则算"点"
     private const int FallbackLo = 60, FallbackHi = 72;
+    private int _lastLo = FallbackLo, _lastHi = FallbackHi;   // 上一次实际用过的音域
 
     private List<RawNote> _notes = new();
     private HashSet<int> _inRange = new();
@@ -126,6 +127,8 @@ public sealed class PianoRoll : Control
     public bool IsPlaying { get; set; }
 
     public int SelectedCount => _sel.Count;
+    /// <summary>卷帘当前持有的音符数。用于诊断"能出声但不显示"这类不同步问题。</summary>
+    public int NoteCount => _notes.Count;
     public bool HasSelection => _sel.Count > 0;
     public double ViewFrom => _viewFrom;
     public double ViewTo => _viewTo;
@@ -326,7 +329,18 @@ public sealed class PianoRoll : Control
         return (lo, hi);
     }
 
-    private (int Lo, int Hi) PitchRange() => ComputePitchRange(_notes);
+    /// <summary>
+    /// 当前要画的音高范围。音符为空时不要退回固定的 C4–C5 —— 那会显示一个假的音域，
+    /// 看起来像"音域突然只剩一个八度"。改为沿用上一次的范围。
+    /// </summary>
+    private (int Lo, int Hi) PitchRange()
+    {
+        if (_notes.Count == 0) return (_lastLo, _lastHi);
+        var r = ComputePitchRange(_notes);
+        _lastLo = r.Lo;
+        _lastHi = r.Hi;
+        return r;
+    }
 
     private double RowH((int Lo, int Hi) r) => PlotH / Math.Max(1, r.Hi - r.Lo + 1);
 

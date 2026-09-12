@@ -70,12 +70,6 @@ public partial class MainWindow : Window
         TimingCombo.ItemsSource = InputTiming.Names;
         TimingCombo.SelectedIndex = 1;          // 标准
 
-        // 导出格式：罗技 G HUB 脚本 / 通用 CSV / 纯文本按键表
-        ExportFormatCombo.ItemsSource = new List<string>
-        {
-            "罗技 G HUB 脚本 (.lua)", "通用 CSV (.csv)", "纯文本按键表 (.txt)"
-        };
-        ExportFormatCombo.SelectedIndex = 0;
 
         // —— 记住上次设置 ——
         _cfg = AppConfig.Load();
@@ -617,7 +611,16 @@ public partial class MainWindow : Window
     /// <summary>一键移调：找让空拍（超音域）最少的移调量。</summary>
     // ================= 导出按键表 / 宏 =================
 
-    private async void BtnExport_Click(object? sender, RoutedEventArgs e)
+    private void ExportGhub_Click(object? sender, RoutedEventArgs e)
+        => ExportSchedule(MacroExporter.Format.LogitechGHub);
+
+    private void ExportCsv_Click(object? sender, RoutedEventArgs e)
+        => ExportSchedule(MacroExporter.Format.KeystrokeCsv);
+
+    private void ExportText_Click(object? sender, RoutedEventArgs e)
+        => ExportSchedule(MacroExporter.Format.KeystrokeText);
+
+    private async void ExportSchedule(MacroExporter.Format format)
     {
         try
         {
@@ -629,12 +632,6 @@ public partial class MainWindow : Window
                 return;
             }
 
-            var format = ExportFormatCombo.SelectedIndex switch
-            {
-                1 => MacroExporter.Format.KeystrokeCsv,
-                2 => MacroExporter.Format.KeystrokeText,
-                _ => MacroExporter.Format.LogitechGHub
-            };
             double speed = SliderSpeed.Value / 100.0;
             var timing = InputTiming.FromIndex(TimingCombo.SelectedIndex);
 
@@ -846,8 +843,22 @@ public partial class MainWindow : Window
         ScheduleSave();
     }
 
+    /// <summary>
+    /// 刷新"需要选中声轨才能用"的按钮（一键移调、导出按键表）。
+    /// 只要勾选/点选了任意声轨就可用；播放中也可导出。
+    /// </summary>
+    private void UpdateActionButtons()
+    {
+        bool hasRows = ActiveRows().Count > 0;
+        BtnAutoTranspose.IsEnabled = hasRows;
+        BtnExport.IsEnabled = hasRows;
+    }
+
+    /// <summary>刷新旋律预览与提示文案（载入文件、切换声轨、改选项后调用）。</summary>
     private void RefreshPreview()
     {
+        UpdateActionButtons();
+
         var okColor = Avalonia.Media.Brushes.SeaGreen;
         var warnColor = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#B25A00"));
 
@@ -1117,8 +1128,10 @@ public partial class MainWindow : Window
         ChkTrimLead.IsEnabled = !busy;
         ChkAutoMinimize.IsEnabled = !busy;
         CountdownCombo.IsEnabled = !busy;
-        BtnAutoTranspose.IsEnabled = !busy;
-        BtnExport.IsEnabled = !busy && ActiveRows().Count > 0;
+        // 一键移调 / 导出按键表 的可用性统一由 UpdateActionButtons() 决定
+        // （只要选中了声轨就能用，不必等播放结束），这里不再覆盖。
+        UpdateActionButtons();
+
         UpdateTransportUi();
         // 速度 / 移调两个滑条：空闲与播放中都可调（播放中实时生效）
         SliderSpeed.IsEnabled = true;

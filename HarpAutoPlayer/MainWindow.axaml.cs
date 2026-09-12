@@ -120,6 +120,9 @@ public partial class MainWindow : Window
         UpdateTransportUi();
         _uiReady = true;
 
+        // 启动即做一次自检，让那一行状态从一开始就有结论
+        RunPreflight();
+
         // 后台静默检查新版本（不阻塞界面；没网就悄悄跳过）
         _ = CheckUpdateAsync();
 
@@ -617,9 +620,6 @@ public partial class MainWindow : Window
     private void ExportCsv_Click(object? sender, RoutedEventArgs e)
         => ExportSchedule(MacroExporter.Format.KeystrokeCsv);
 
-    private void ExportText_Click(object? sender, RoutedEventArgs e)
-        => ExportSchedule(MacroExporter.Format.KeystrokeText);
-
     private async void ExportSchedule(MacroExporter.Format format)
     {
         try
@@ -751,28 +751,52 @@ public partial class MainWindow : Window
     // ================= 播放前自检 =================
 
     /// <summary>
-    /// 检查"模拟按键能不能真的送进游戏"，并把结果写进日志。
-    /// 检查项：管理员权限、前台窗口是不是本程序、游戏与本程序的权限是否匹配、前台输入法。
+    /// 播放前自检：管理员权限、前台输入法两项，结果直接显示在界面那一行（✔ / ✘），不写日志。
     /// </summary>
     private void RunPreflight()
     {
+        PreflightCheck.Report report;
         try
         {
-            var report = PreflightCheck.Run(SelfHwnd);
-            bool hasProblem = report.HasProblem;
-
-            InsertLog(hasProblem ? "播放前自检 —— 发现需要注意的地方：" : "播放前自检：全部正常。");
-            foreach (var line in PreflightCheck.ToLogLines(report)) InsertLog(line);
-
-            if (hasProblem)
-                LblWarn.Text = "播放前自检发现问题：请看右下日志（多半是没用管理员运行、或输入法还是中文）。";
-            else
-                LblWarn.Text = "";
+            report = PreflightCheck.Run();
         }
-        catch (Exception ex)
+        catch
         {
-            InsertLog($"播放前自检未能完成（不影响播放）：{ex.Message}");
+            // 检测失败就不显示结论，避免给出误导性的 ✘
+            TxtCheckAdminMark.Text = "–";
+            TxtCheckAdminMark.Foreground = NeutralBrush;
+            TxtCheckImeMark.Text = "–";
+            TxtCheckImeMark.Foreground = NeutralBrush;
+            TxtCheckHint.Text = "";
+            return;
         }
+
+        PaintCheck(report.Admin, TxtCheckAdminMark, TxtCheckAdmin);
+        PaintCheck(report.Ime, TxtCheckImeMark, TxtCheckIme);
+
+        TxtCheckHint.Text = report.AllPassed
+            ? ""
+            : string.Join("；", new[] { report.Admin, report.Ime }
+                .Where(c => !c.Passed)
+                .Select(c => c.Detail));
+    }
+
+    private static readonly Avalonia.Media.IBrush OkBrush =
+        Avalonia.Media.Brushes.SeaGreen;
+    private static readonly Avalonia.Media.IBrush FailBrush =
+        Avalonia.Media.Brushes.Crimson;
+    private static readonly Avalonia.Media.IBrush NeutralBrush =
+        new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#8A8F98"));
+
+    /// <summary>通过打勾、未通过打叉。</summary>
+    private static void PaintCheck(PreflightCheck.Check c,
+                                   Avalonia.Controls.TextBlock mark,
+                                   Avalonia.Controls.TextBlock label)
+    {
+        mark.Text = c.Passed ? "✔" : "✘";
+        mark.Foreground = c.Passed ? OkBrush : FailBrush;
+        label.Foreground = c.Passed ? OkBrush : FailBrush;
+        label.Text = $"{c.Name}：{c.Detail}";
     }
 
     // ================= 自动检查更新 =================

@@ -13,7 +13,6 @@ namespace HarpAutoPlayer.Engine;
 /// 支持三种格式：
 ///   · LogitechGHub  —— 罗技 G HUB 的 Lua 脚本（G HUB → 游戏与应用程序 → 编写脚本 → 编辑 → 粘贴保存）
 ///   · KeystrokeCsv  —— 通用 CSV（时刻/动作/按键），可用于任何支持导入按键时序的工具
-///   · KeystrokeText —— 纯文本按键表，便于人工阅读或照着录制
 ///
 /// 注意：雷蛇 Synapse 的宏文件是私有格式、没有官方规范，硬编一个格式很容易导入失败，
 /// 因此不提供"一键导入"文件；雷蛇用户请用 CSV/文本，或直接用宏录制功能录一遍。
@@ -21,13 +20,12 @@ namespace HarpAutoPlayer.Engine;
 public static class MacroExporter
 {
     /// <summary>导出格式。</summary>
-    public enum Format { LogitechGHub, KeystrokeCsv, KeystrokeText }
+    public enum Format { LogitechGHub, KeystrokeCsv }
 
     public static string Extension(Format f) => f switch
     {
         Format.LogitechGHub => ".lua",
-        Format.KeystrokeCsv => ".csv",
-        _ => ".txt"
+        _ => ".csv"
     };
 
     /// <summary>
@@ -43,12 +41,9 @@ public static class MacroExporter
                                string songName = "")
     {
         var events = PlaybackEngine.BuildSchedulePreview(notes, timing, speed);
-        return format switch
-        {
-            Format.LogitechGHub => BuildLua(events, songName, speed),
-            Format.KeystrokeCsv => BuildCsv(events),
-            _ => BuildText(events, songName, speed)
-        };
+        return format == Format.LogitechGHub
+            ? BuildLua(events, songName, speed)
+            : BuildCsv(events);
     }
 
     // ---------------------------------------------------------------- 公共：按键名映射
@@ -142,28 +137,6 @@ public static class MacroExporter
             string action = e.Down ? "down" : "up";
             sb.AppendLine($"{(e.MusicTime * 1000.0).ToString("F1", CultureInfo.InvariantCulture)}," +
                           $"{action},{target},");
-        }
-        return sb.ToString();
-    }
-
-    // ---------------------------------------------------------------- 纯文本
-
-    private static string BuildText(IReadOnlyList<PlaybackEngine.ScheduledEvent> events,
-                                    string songName, double speed)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("口琴自动演奏器 导出的按键表");
-        if (!string.IsNullOrWhiteSpace(songName)) sb.AppendLine($"曲目：{songName}");
-        sb.AppendLine($"速度：{speed * 100:F0}%　事件数：{events.Count}");
-        sb.AppendLine("说明：time_ms 为相对开头的毫秒数；down=按下，up=抬起。");
-        sb.AppendLine("      可用任何支持「按键时序导入」的工具（或鼠标厂商的宏录制）复现。");
-        sb.AppendLine();
-        sb.AppendLine("time_ms\taction\ttarget");
-        foreach (var e in events)
-        {
-            string target = e.Kind == "key" ? e.KeyLabel : MouseName(e.Kind);
-            sb.AppendLine($"{(e.MusicTime * 1000.0).ToString("F1", CultureInfo.InvariantCulture)}\t" +
-                          $"{(e.Down ? "down" : "up")}\t{target}");
         }
         return sb.ToString();
     }

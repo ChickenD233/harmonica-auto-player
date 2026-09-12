@@ -148,7 +148,7 @@
     </Grid>
 
     <!-- ================= 右栏：演奏 ================= -->
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*">
 
       <!-- 第 0 行：有新版本时的提示条 + 主旋律信息（同一行内纵向排列，避免重叠） -->
       <StackPanel Grid.Row="0">
@@ -192,8 +192,29 @@
         </Grid>
       </Border>
 
+      <!-- 播放前自检结果：单独成行，通过打勾、未通过打叉 -->
+      <Border Grid.Row="4" Classes="card" Margin="0,10,0,0" Padding="12,7" Background="#FAFBFC">
+        <StackPanel Orientation="Horizontal" Spacing="18">
+          <TextBlock Text="播放前自检" FontSize="12.5" Foreground="#8A8F98" VerticalAlignment="Center"/>
+          <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center"
+                      ToolTip.Tip="模拟按键受 Windows 的 UIPI 限制：游戏若以管理员运行而本程序不是，按键会被系统拦截">
+            <TextBlock x:Name="TxtCheckAdminMark" Text="–" FontSize="13.5" FontWeight="Bold"
+                       Foreground="#8A8F98" VerticalAlignment="Center"/>
+            <TextBlock x:Name="TxtCheckAdmin" Text="管理员" FontSize="12.5" VerticalAlignment="Center"/>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center"
+                      ToolTip.Tip="中文/日文输入法会截走按键（尤其拼音未上屏时），请切到英文">
+            <TextBlock x:Name="TxtCheckImeMark" Text="–" FontSize="13.5" FontWeight="Bold"
+                       Foreground="#8A8F98" VerticalAlignment="Center"/>
+            <TextBlock x:Name="TxtCheckIme" Text="输入法" FontSize="12.5" VerticalAlignment="Center"/>
+          </StackPanel>
+          <TextBlock x:Name="TxtCheckHint" FontSize="12" Foreground="#B25A00"
+                     VerticalAlignment="Center"/>
+        </StackPanel>
+      </Border>
+
       <!-- 选项区：三行分组，避免一个 WrapPanel 里堆十几个控件 -->
-      <StackPanel Grid.Row="3" Spacing="8" Margin="0,10,0,0">
+      <StackPanel Grid.Row="5" Spacing="8" Margin="0,10,0,0">
 
         <!-- 第 1 行：演奏参数 -->
         <Border Classes="card" Padding="12,8">
@@ -255,7 +276,6 @@
                 <MenuFlyout Placement="Bottom">
                   <MenuItem Header="罗技 G HUB 脚本 (.lua)" Click="ExportGhub_Click"/>
                   <MenuItem Header="通用 CSV (.csv)" Click="ExportCsv_Click"/>
-                  <MenuItem Header="纯文本按键表 (.txt)" Click="ExportText_Click"/>
                 </MenuFlyout>
               </Button.Flyout>
             </Button>
@@ -289,7 +309,7 @@
         </Border>
       </StackPanel>
 
-      <Border Grid.Row="4" Classes="card" Margin="0,10,0,0" Padding="10,8" Background="#FAFBFC">
+      <Border Grid.Row="6" Classes="card" Margin="0,10,0,0" Padding="10,8" Background="#FAFBFC">
         <ListBox x:Name="LogList" FontSize="12" Foreground="#555" Background="Transparent"/>
       </Border>
     </Grid>

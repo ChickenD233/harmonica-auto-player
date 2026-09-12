@@ -2,7 +2,24 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="HarpAutoPlayer.App"
              RequestedThemeVariant="Light">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://HarpAutoPlayer/Styles/Theme.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- 让 Fluent 自带的滑块/勾选框/焦点框也用品牌绿（原来是 Fluent 蓝，跟界面不搭） -->
+            <Color x:Key="SystemAccentColor">#2E8B57</Color>
+            <Color x:Key="SystemAccentColorDark1">#26784A</Color>
+            <Color x:Key="SystemAccentColorDark2">#1F6540</Color>
+            <Color x:Key="SystemAccentColorDark3">#1A5636</Color>
+            <Color x:Key="SystemAccentColorLight1">#3AA469</Color>
+            <Color x:Key="SystemAccentColorLight2">#4FB57C</Color>
+            <Color x:Key="SystemAccentColorLight3">#6BC492</Color>
+        </ResourceDictionary>
+    </Application.Resources>
     <Application.Styles>
         <FluentTheme />
+        <StyleInclude Source="avares://HarpAutoPlayer/Styles/Controls.axaml" />
     </Application.Styles>
 </Application>

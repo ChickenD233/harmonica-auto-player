@@ -135,6 +135,8 @@ public partial class MainWindow : Window
             Opened += (_, _) => EnsureTray();
         }
         Opened += (_, _) => ShowQuickStartOnce();
+
+        InstallDevSnapshot(this);   // 【开发用，可删】设了 HARP_UI_SNAPSHOT 才生效，见 DevUISnapshot.cs
     }
 
     // ================= 首次启动“快速上手” =================
@@ -222,14 +224,14 @@ public partial class MainWindow : Window
         if (eng.IsPaused)
         {
             eng.Resume();
-            LblStatus.Foreground = Avalonia.Media.Brushes.SeaGreen;
-            LblStatus.FontSize = 21;
+            LblStatus.Foreground = OkBrush;
+            LblStatus.FontSize = 22;
             LblStatus.Text = "演奏中…";
         }
         else
         {
             eng.Pause();
-            LblStatus.Foreground = Avalonia.Media.Brushes.Crimson;
+            LblStatus.Foreground = FailBrush;
             LblStatus.Text = "已暂停 —— 按 F6 或点「▶ 继续」重新开始";
         }
         UpdateTransportUi();
@@ -240,7 +242,7 @@ public partial class MainWindow : Window
     /// <summary>空闲时的状态区提示（人话，不是干巴巴的空白）。</summary>
     private void SetIdleHint()
     {
-        LblStatus.Foreground = Avalonia.Media.Brushes.Gray;
+        LblStatus.Foreground = NeutralBrush;
         LblStatus.FontSize = 15;
         LblStatus.Text = "打开 MIDI 并点选主旋律 → 按 F6 或点 ▶ 播放（同一个键：再按暂停 / 再按继续）";
     }
@@ -788,12 +790,13 @@ public partial class MainWindow : Window
         InsertLog("已重新检测管理员权限与输入法。");
     }
 
+    // 与 Styles/Theme.axaml 的语义色 token 保持一致（改配色时两处一起改）
     private static readonly Avalonia.Media.IBrush OkBrush =
-        Avalonia.Media.Brushes.SeaGreen;
+        new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#1E7A3C"));   // = BrushSuccess
     private static readonly Avalonia.Media.IBrush FailBrush =
-        Avalonia.Media.Brushes.Crimson;
+        new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#C0392B"));   // = BrushDanger
     private static readonly Avalonia.Media.IBrush NeutralBrush =
-        new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#8A8F98"));
+        new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#8A93A0"));   // = BrushTextMuted
 
     /// <summary>通过打勾、未通过打叉。</summary>
     private static void PaintCheck(PreflightCheck.Check c,
@@ -890,7 +893,10 @@ public partial class MainWindow : Window
     {
         UpdateActionButtons();
 
-        var okColor = Avalonia.Media.Brushes.SeaGreen;
+        // 空状态引导：没有轨道时显示提示，别留一大片空白
+        if (EmptyHint != null) EmptyHint.IsVisible = _tracks.Count == 0;
+
+        var okColor = OkBrush;
         var warnColor = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#B25A00"));
 
         var rows = ActiveRows();
@@ -1005,7 +1011,7 @@ public partial class MainWindow : Window
 
     private void UpdateCountdownText()
     {
-        LblStatus.Foreground = Avalonia.Media.Brushes.Crimson;
+        LblStatus.Foreground = FailBrush;
         LblStatus.FontSize = 38;   // 切游戏前的最后几秒必须一眼看到
         LblStatus.Text = $"{_countdownLeft} 秒后开始 —— 请切到游戏并装备口琴（再按 F6 可取消）";
         SetCountdownChrome(true);
@@ -1015,7 +1021,7 @@ public partial class MainWindow : Window
     private void SetCountdownChrome(bool on)
     {
         Background = new Avalonia.Media.SolidColorBrush(
-            Avalonia.Media.Color.Parse(on ? "#FFF3E4D8" : "#F3F4F6"));
+            Avalonia.Media.Color.Parse(on ? "#FFF3E4D8" : "#F4F6F9"));   // 暖色提醒 / 常态底色（= BrushCanvas）
     }
 
     private void StartPlayback()
@@ -1047,8 +1053,8 @@ public partial class MainWindow : Window
 
         string fgTitle = InputSender.ForegroundWindowTitle;
         InsertLog($"开始吹奏；当前前台窗口：{(string.IsNullOrEmpty(fgTitle) ? "（读不到，可能未切到游戏）" : fgTitle)}");
-        LblStatus.Foreground = Avalonia.Media.Brushes.SeaGreen;
-        LblStatus.FontSize = 21;
+        LblStatus.Foreground = OkBrush;
+        LblStatus.FontSize = 22;
         SetCountdownChrome(false);
         LblStatus.Text = "演奏中…";
 
@@ -1085,7 +1091,7 @@ public partial class MainWindow : Window
                 : $"{eng.ElapsedSeconds:F1} / {eng.TotalSeconds:F1} s";
             if (!string.IsNullOrEmpty(eng.CurrentNote))
             {
-                LblStatus.Foreground = Avalonia.Media.Brushes.SeaGreen;
+                LblStatus.Foreground = OkBrush;
                 LblStatus.Text = eng.CurrentNote;
             }
         };
@@ -1141,7 +1147,7 @@ public partial class MainWindow : Window
         SliderProgress.Value = 0;
         SliderProgress.IsEnabled = false;
         TxtTime.Text = "0.0 / 0.0 s";
-        LblStatus.FontSize = 21;
+        LblStatus.FontSize = 22;
         SetCountdownChrome(false);
         SetIdleHint();
     }

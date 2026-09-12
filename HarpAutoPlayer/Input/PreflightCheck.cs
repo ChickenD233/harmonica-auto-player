@@ -4,15 +4,12 @@ using System.Runtime.InteropServices;
 namespace HarpAutoPlayer.Input;
 
 /// <summary>
-/// 播放前自检：只检查两项实际影响"模拟按键能否送达"的因素 ——
-/// 管理员权限、前台窗口的输入法。结果由界面单独成行显示（✔ / ✘）。
+/// 播放前自检：只查真正影响“按键能否送达”的两项 —— 管理员权限、前台窗口输入法。
 /// </summary>
 public static class PreflightCheck
 {
-    /// <summary>单项检测结果。</summary>
     public sealed record Check(string Name, bool Passed, string Detail);
 
-    /// <summary>自检结果。</summary>
     public sealed class Report
     {
         public Check Admin { get; init; } = new("管理员", false, "");
@@ -43,7 +40,6 @@ public static class PreflightCheck
     private const uint TOKEN_QUERY = 0x0008;
     private const int TokenElevation = 20;
 
-    /// <summary>当前进程是否以管理员身份运行。</summary>
     public static bool IsSelfElevated()
     {
         if (!OperatingSystem.IsWindows()) return false;
@@ -61,8 +57,7 @@ public static class PreflightCheck
     }
 
     /// <summary>
-    /// 前台窗口所属线程的键盘布局。低 16 位是 LANGID：
-    /// 0x0804 = 简体中文，0x0404 = 繁体中文，0x0411 = 日文，0x0409 = 美式英文…
+    /// 前台窗口所属线程的键盘布局；低 16 位是 LANGID（0x0804 简中、0x0404 繁中、0x0411 日文）。
     /// </summary>
     public static ushort ForegroundKeyboardLayoutId()
     {
@@ -74,7 +69,6 @@ public static class PreflightCheck
         return (ushort)(hkl.ToInt64() & 0xFFFF);
     }
 
-    /// <summary>运行自检：管理员权限 + 前台输入法。</summary>
     public static Report Run()
     {
         if (!OperatingSystem.IsWindows())
@@ -84,12 +78,12 @@ public static class PreflightCheck
                 Ime = new Check("输入法", false, "非 Windows")
             };
 
-        // ① 管理员权限：模拟按键受 UIPI 限制，未提权时可能被系统直接拦截
+        // ① 模拟按键受 UIPI 限制，未提权时会被系统直接拦截
         bool admin = IsSelfElevated();
         var adminCheck = new Check("管理员", admin,
             admin ? "已提权" : "未提权，游戏为管理员时按键会被拦截");
 
-        // ② 前台输入法：中文/日文/韩文 IME 会截走按键
+        // ② 前台输入法：中日韩 IME 会截走按键
         ushort lang = ForegroundKeyboardLayoutId();
         Check imeCheck;
         if (lang == 0)

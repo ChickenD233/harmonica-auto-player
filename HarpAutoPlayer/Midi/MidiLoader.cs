@@ -3,10 +3,7 @@ using Melanchall.DryWetMidi.Interaction;
 
 namespace HarpAutoPlayer.Midi;
 
-/// <summary>
-/// 负责导入并“识别”各种标准 MIDI 文件（格式 0 / 1 / 2 均可），
-/// 按 (轨道, 声道) 拆出可选的旋律候选，并换算为秒。
-/// </summary>
+/// <summary>导入各种标准 MIDI 文件（格式 0/1/2），按 (轨道, 声道) 拆出旋律候选并换算为秒。</summary>
 public static class MidiLoader
 {
     static MidiLoader()
@@ -44,8 +41,8 @@ public static class MidiLoader
             TextEncoding = System.Text.Encoding.UTF8,
             DecodeTextCallback = DecodeTextSmart,
             NotEnoughBytesPolicy = NotEnoughBytesPolicy.Ignore,
-            // 网上流传的 MIDI 常带“脏数据”（如调号/通道事件的非法参数值）：
-            // 一律就近纠正而不是中断，保证能载入（这些元事件对演奏无影响）。
+            // 网上 MIDI 常带脏数据（如调号/通道事件非法参数值），一律就近纠正而不中断，
+            // 保证能载入；这些元事件对演奏无影响。
             InvalidMetaEventParameterValuePolicy =
                 Melanchall.DryWetMidi.Core.InvalidMetaEventParameterValuePolicy.SnapToLimits,
             InvalidChannelEventParameterValuePolicy =
@@ -61,12 +58,12 @@ public static class MidiLoader
         catch (Exception ex) when (ex is Melanchall.DryWetMidi.Core.NotEnoughBytesException
                                 || ex is Melanchall.DryWetMidi.Core.InvalidChunkSizeException)
         {
-            // 终极兜底：手动把“最后一个完整轨道之后”的残缺/乱码字节裁掉，再重新解析
+            // 终极兜底：裁掉"最后一个完整轨道之后"的残缺字节，再重新解析
             byte[]? trimmed = TryTrimToCompleteChunks(data);
             if (trimmed == null)
                 throw new InvalidDataException(
-                    "文件不是完整可用的 MIDI（数据损坏或被截断，读到乱码就停了）。" +
-                    "常见原因：网站“免积分/试听”下载给的是残缺或非 MIDI 内容。请用完整方式重新下载后再试。");
+                    "文件不是完整可用的 MIDI（数据损坏或被截断）。常见原因：" +
+                    "网站“免积分/试听”给的是残缺或非 MIDI 内容，请重新完整下载。");
             try
             {
                 using var ms2 = new MemoryStream(trimmed);
@@ -75,8 +72,8 @@ public static class MidiLoader
             catch
             {
                 throw new InvalidDataException(
-                    "文件不是完整可用的 MIDI（数据损坏或被截断，读到乱码就停了）。" +
-                    "常见原因：网站“免积分/试听”下载给的是残缺或非 MIDI 内容。请用完整方式重新下载后再试。");
+                    "文件不是完整可用的 MIDI（数据损坏或被截断）。常见原因：" +
+                    "网站“免积分/试听”给的是残缺或非 MIDI 内容，请重新完整下载。");
             }
         }
         var tempoMap = file.GetTempoMap();
@@ -198,9 +195,7 @@ public static class MidiLoader
     }
 
     /// <summary>
-    /// 截断修复：把“最后一个完整 MTrk 轨道”之后的残缺字节裁掉，
-    /// 并把文件头里的轨道数改成实际个数，尽量让剩余部分能被正常解析。
-    /// 修不了返回 null。
+    /// 截断修复：裁掉"最后一个完整 MTrk 轨道"之后的残缺字节，并把文件头轨道数改成实际个数，修不了返回 null。
     /// </summary>
     private static byte[]? TryTrimToCompleteChunks(byte[] data)
     {

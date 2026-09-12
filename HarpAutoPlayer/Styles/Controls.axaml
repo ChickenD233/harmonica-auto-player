@@ -1,9 +1,7 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-  <!-- ==================== 卡片 ====================
-       原版所有卡片都是「白底 + 1px 边」，靠边框硬分块、没有层次。
-       现在：更圆的角 + 极轻投影 + 更浅的边，块与块之间用阴影分开。 -->
+  <!-- ==================== 卡片：圆角 + 轻投影靠阴影分块（原版白底 1px 边没层次） ==================== -->
   <Style Selector="Border.card">
     <Setter Property="Background" Value="{DynamicResource BrushSurface}" />
     <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
@@ -14,10 +12,8 @@
   </Style>
 
   <!-- ==================== 按钮 ====================
-       Avalonia 11 的 Fluent 按钮把底色画在模板里的 PART_ContentPresenter 上，
-       所以要同时覆盖「基态 / 悬停 / 按下 / 禁用」四个状态，否则悬停会跳回 Fluent 灰。 -->
+       Avalonia 11 把按钮底色画在 PART_ContentPresenter 上：四个状态都要覆盖，否则悬停跳回 Fluent 灰。 -->
 
-  <!-- 主按钮（品牌绿）：打开 MIDI、播放、我知道了 -->
   <Style Selector="Button.accent">
     <Setter Property="Foreground" Value="{DynamicResource BrushOnAccent}" />
     <Setter Property="FontWeight" Value="SemiBold" />
@@ -43,7 +39,6 @@
     <Setter Property="BorderBrush" Value="{DynamicResource BrushAccentDisabled}" />
   </Style>
 
-  <!-- 次要按钮：白底细边，悬停时描边转品牌绿 -->
   <Style Selector="Button.secondary">
     <Setter Property="CornerRadius" Value="{DynamicResource RadiusControl}" />
     <Setter Property="Foreground" Value="{DynamicResource BrushText}" />
@@ -89,7 +84,7 @@
   </Style>
 
   <!-- ==================== 轨道列表 ==================== -->
-  <!-- 列头独立成一块下沉的条，和下面的行区分开 -->
+  <!-- 列头做成下沉条，与数据行区分 -->
   <Style Selector="Border.tableHead">
     <Setter Property="Background" Value="{DynamicResource BrushSurfaceSunken}" />
     <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />

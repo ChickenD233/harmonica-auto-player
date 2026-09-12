@@ -2,9 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace HarpAutoPlayer.Input;
 
-/// <summary>
-/// 通过 Windows SendInput 模拟键盘与鼠标（真实全局输入，焦点在游戏窗口即可生效）。
-/// </summary>
+/// <summary>用 Windows SendInput 模拟键鼠（全局真实输入，游戏窗口聚焦即可）。</summary>
 public static class InputSender
 {
     public enum MouseButton { Left, Right, Middle }
@@ -74,11 +72,10 @@ public static class InputSender
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetWindowTextW(IntPtr hWnd, System.Text.StringBuilder text, int maxCount);
 
-    /// <summary>当前前台窗口句柄（仅本程序目标系统有效）。</summary>
     public static IntPtr ForegroundWindow =>
         OperatingSystem.IsWindows() ? GetForegroundWindow() : IntPtr.Zero;
 
-    /// <summary>当前前台窗口标题（用于诊断按键发给了谁）。</summary>
+    /// <summary>前台窗口标题，用于诊断按键发给了谁。</summary>
     public static string ForegroundWindowTitle
     {
         get
@@ -92,7 +89,7 @@ public static class InputSender
         }
     }
 
-    /// <summary>把指定窗口置前（用于停止时把焦点还给游戏后再补发一次“松开”）。</summary>
+    /// <summary>置前后台窗口；停止时先把焦点还给游戏，再补发一次“松开”。</summary>
     public static void BringToForeground(IntPtr hWnd)
     {
         if (OperatingSystem.IsWindows() && hWnd != IntPtr.Zero) SetForegroundWindow(hWnd);
@@ -100,7 +97,7 @@ public static class InputSender
 
     public static bool IsSupported => OperatingSystem.IsWindows();
 
-    /// <summary>可模拟的键：Z..M 及键盘逗号“,”（高高音do）。</summary>
+    /// <summary>可模拟的键：Z..M 和逗号“,”（高高音 do）。</summary>
     private static ushort VkCodeOf(char c)
     {
         if (c is >= 'A' and <= 'Z') return (ushort)c;
@@ -110,12 +107,11 @@ public static class InputSender
 
     private static void SendKey(bool down, char vkChar)
     {
-        if (!OperatingSystem.IsWindows()) return;   // 该功能仅本程序目标系统有效
+        if (!OperatingSystem.IsWindows()) return;
         ushort vk = VkCodeOf(char.ToUpperInvariant(vkChar));
         if (vk == 0) return;
 
-        // 一律用“扫描码”发送：wVk 置 0、带 KEYEVENTF_SCANCODE，
-        // 按物理按键位发送（很多游戏/DirectInput 只认扫描码，兼容性最好）
+        // 一律发扫描码（wVk=0 + KEYEVENTF_SCANCODE）：很多游戏/DirectInput 只认扫描码
         var ki = new KEYBDINPUT
         {
             wVk = 0,
@@ -135,7 +131,7 @@ public static class InputSender
 
     private static void SendMouse(MouseButton button, bool down)
     {
-        if (!OperatingSystem.IsWindows()) return;   // 见上
+        if (!OperatingSystem.IsWindows()) return;
         uint flag = button switch
         {
             MouseButton.Left => down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP,
@@ -171,7 +167,7 @@ public static class InputSender
     /// <summary>把所有键/鼠标键抬起，用于停止/暂停时清理状态。</summary>
     public static void ReleaseEverything()
     {
-        if (!OperatingSystem.IsWindows()) return;   // 见上
+        if (!OperatingSystem.IsWindows()) return;
         foreach (char c in "ZXCVBNM,") KeyUp(c);
         MouseUp(MouseButton.Left);
         MouseUp(MouseButton.Right);

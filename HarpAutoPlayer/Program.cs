@@ -3,15 +3,14 @@ using HarpAutoPlayer;
 
 internal static class Program
 {
-    // 单实例锁：第二个实例启动时直接退出，避免两个程序同时按键
+    // 单实例锁：避免两个实例同时模拟按键
     private static System.IO.FileStream? _singleLock;
 
-    // 初始化代码。不要使用任何可能依赖 Avalonia、第三方库或
-    // 其它服务端代码的 API 来初始化应用。
+    // 初始化代码：不要用依赖 Avalonia、第三方库或其它服务端代码的 API
     [STAThread]
     public static void Main(string[] args)
     {
-        // 任何未捕获异常都写入本地日志，便于回传排查
+        // 未捕获异常写入本地日志，便于回传排查
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
             try { HarpAutoPlayer.Persist.LogFile.Append("[FATAL] " + (e.ExceptionObject?.ToString() ?? "未知异常")); }
@@ -22,13 +21,13 @@ internal static class Program
         {
             try { HarpAutoPlayer.Persist.LogFile.Append("检测到已有一个实例在运行，本实例直接退出。"); }
             catch { }
-            return;   // 已有一个在跑 → 退出，防止两个程序同时模拟按键
+            return;   // 已有实例在跑；防两个程序同时按键
         }
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 
-    /// <summary>通过独占锁文件保证单实例（跨平台）。</summary>
+    /// <summary>独占锁文件保证单实例（跨平台）。</summary>
     private static bool TryAcquireSingleInstance()
     {
         try
@@ -48,11 +47,11 @@ internal static class Program
         }
         catch
         {
-            return true;    // 其它异常不阻塞运行（尽量保证能启动）
+            return true;    // 其它异常不阻塞启动
         }
     }
 
-    // Avalonia 配置，不要移除；也用于可视化设计器。
+    // Avalonia 配置，勿移除；可视化设计器也要用
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()

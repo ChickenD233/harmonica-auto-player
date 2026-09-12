@@ -4,13 +4,9 @@ using HarpAutoPlayer.Input;
 namespace HarpAutoPlayer.Engine;
 
 /// <summary>
-/// 播放调度引擎：把映射后的音符变成一系列键盘/鼠标按下与抬起事件，
-/// 后台线程按真实时间发送（SendInput）。
-///
-/// 时间模型：事件表使用“音乐时间”（单位：秒，与速度无关）。
-/// 工作线程按 速度(speed) 把流逝的物理时间积分成音乐时间，
-/// 因此 <see cref="Speed"/> 随时可变、<see cref="SeekFraction"/> 可跳转、
-/// <see cref="UpdateNotes"/> 可在播放中更换剩余音符（实时移调）。
+/// 播放调度引擎：把映射后的音符变成键盘/鼠标按下抬起事件，后台线程按真实时间发送（SendInput）。
+/// 时间模型：事件表用"音乐时间"（秒，与速度无关）；工作线程按速度把物理流逝时间积分成音乐时间，
+/// 因此 Speed 随时可变、SeekFraction 可跳转、UpdateNotes 可播放中更换剩余音符（实时移调）。
 /// </summary>
 public sealed class PlaybackEngine : IDisposable
 {
@@ -119,10 +115,7 @@ public sealed class PlaybackEngine : IDisposable
         public string KeyLabel => Key == ' ' ? "" : (Key == ',' ? "," : Key.ToString());
     }
 
-    /// <summary>
-    /// 按指定时序预算构建"整首曲子"的事件表（不做实际发送）。
-    /// 与 <see cref="Play"/> 走同一套 BuildSchedule，因此导出的按键表与实际演奏完全一致。
-    /// </summary>
+    /// <summary>按指定时序预算构建"整首曲子"的事件表（不实际发送），与 <see cref="Play"/> 同一套构建逻辑。</summary>
     public static List<ScheduledEvent> BuildSchedulePreview(
         IReadOnlyList<MappedNote> notes, InputTiming? timing = null, double speed = 1.0)
     {
@@ -155,12 +148,9 @@ public sealed class PlaybackEngine : IDisposable
             if (_running) StopInternal();
 
             _speed = speed <= 0 ? 1.0 : Math.Clamp(speed, 0.1, 5.0);
-            // 提前量与速度无关：它是"提前多少物理时间把事件发出去"，
-            // 绝不能乘 speed（旧版 5x 速度下会膨胀到 125ms，谱面与实际发声严重错位）。
-            //
-            // 但又必须足够大：修饰键是提前 ModLeadMs 预置的，若派发提前量小于
-            // ModLeadMs + 一帧，预置事件会被推迟到"音键本该按下的时刻"之后才发出，
-            // 结果修饰键被砍掉、音高全错。这里取 Timing 预算与所需值中的较大者。
+            // 提前量与速度无关：它是"提前多少物理时间发事件"，绝不能乘 speed
+            // （旧版 5x 速度下会膨胀到 125ms，谱面与实际发声严重错位）；
+            // 但又必须 ≥ ModLeadMs + 一帧，否则预置修饰键会被推到音键之后发出，音高全错。
             double needLeadMs = Timing.ModLeadMs + Timing.FrameMs;
             _leadSec = Math.Max(Timing.LeadMs, needLeadMs) / 1000.0;
             _loop = loop;
@@ -170,10 +160,10 @@ public sealed class PlaybackEngine : IDisposable
             _snapNote = "";
             _snapLoop = 0;
 
-            // 只保留可演奏音（与派发侧语义一致；跳转会重建整表，必须同样过滤）
+            // 只保留可演奏音（跳转会重建整表，必须同样过滤）
             _allNotes = notes.Where(n => n.InRange).ToList();
-            // 构建时以"当前真实按下的修饰键"为起点：若上轮播放中断时还按着鼠标键，
-            // 这里会先补发松开，避免游戏侧残留升半音/八度状态。
+            // 构建时以"当前真实按下的修饰键"为起点：上轮中断时若还按着鼠标键，
+            // 先补发松开，避免游戏侧残留升半音/八度状态。
             (_events, _totalMusic) = BuildSchedule(_allNotes, _breath, CurrentModifiers());
             _snapTotal = _totalMusic;
 
@@ -308,8 +298,8 @@ public sealed class PlaybackEngine : IDisposable
                 if (dt > 0) _musicNow += dt * _speed;
 
                 // 2) 派发到期的事件
-                // 提前量是**固定物理时间**（不乘速度）：若乘速度，5x 时会变成
-                // 125ms 提前发，谱面时间与实际发声严重错位，也会把事件簇推得更密。
+                // 提前量是**固定物理时间**（不乘速度）：否则 5x 时提前 125ms 发，
+                // 谱面与实际发声严重错位。
                 double lead = _leadSec;
                 while (_running && _nextIdx < _events.Count && _events[_nextIdx].T <= _musicNow + lead)
                 {
@@ -416,8 +406,7 @@ public sealed class PlaybackEngine : IDisposable
     }
 
     /// <summary>
-    /// 定位“下一个待派发”事件：保留一段预滚窗口，
-    /// 让跳转/换谱后紧接的音符能先重放它的八度/升半音修饰键。
+    /// 定位"下一个待派发"事件：保留一段预滚窗口，让跳转/换谱后紧接的音符先重放它的八度/升半音修饰键。
     /// 窗口按**物理**时间预算折算成音乐时间（速度越快，同样物理时长覆盖的音乐时间越多）。
     /// </summary>
     private int FindNextIdx(double musicNow)
@@ -507,17 +496,11 @@ public sealed class PlaybackEngine : IDisposable
 
     /// <summary>
     /// 把一个主旋律音符序列压成物理键盘/鼠标事件时间表（音乐时间，秒，与速度无关）。
-    ///
-    /// 与旧实现的关键区别：所有"最小间隔"都用 <see cref="InputTiming"/> 的**物理毫秒**，
-    /// 而不是 12ms / 8ms 这类远小于一帧的硬编码值。
-    /// 旧实现把"松开前音 + 八度键 + 中键 + 本音按下"全挤在 20ms 内（小于一帧），
-    /// 游戏按帧采样时会把这一簇折叠掉，排在最末尾的音键被吃掉 → 漏音。
-    ///
-    /// 本实现保证（均为音乐时间，实际物理间隔 = 此值 ÷ 速度）：
-    ///   · 修饰键比音键早 ModLeadMs，且音键至少晚于修饰键一帧；
-    ///   · 同一根音键两次按下间隔 ≥ RetriggerMs；
-    ///   · 每个音键按住时长 ≥ MinHoldMs；
-    ///   · 前音抬起 → 后音按下间隔 ≥ ReleaseGapMs。
+    /// 旧实现把所有最小间隔写成 12ms / 8ms 这类远小于一帧的硬编码值，
+    /// 把"松开前音 + 八度键 + 中键 + 本音按下"全挤在 20ms 内，游戏按帧采样时整簇被折叠、
+    /// 排在末尾的音键被吃掉 → 漏音。本实现所有最小间隔改用 InputTiming 的**物理毫秒**：
+    /// 修饰键比音键早 ModLeadMs 且音键至少晚一帧；同键两次按下 ≥ RetriggerMs；
+    /// 按住时长 ≥ MinHoldMs；前音抬起→后音按下 ≥ ReleaseGapMs。
     /// </summary>
     private (List<PhysicalEvent>, double) BuildSchedule(
         IReadOnlyList<MappedNote> notes, bool breath, ModState startMods)

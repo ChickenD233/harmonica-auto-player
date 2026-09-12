@@ -4,7 +4,6 @@ using HarpAutoPlayer.Midi;
 
 namespace HarpAutoPlayer;
 
-/// <summary>轨道候选在表格里的一行。</summary>
 public sealed class TrackRowVM : INotifyPropertyChanged
 {
     private bool _isMain;
@@ -65,7 +64,7 @@ public sealed class TrackRowVM : INotifyPropertyChanged
     public int NoteCount => Candidate.NoteCount;
     public string RangeLabel => Candidate.RangeLabel;
 
-    /// <summary>时长的人话格式：不足 1 分钟显示秒，否则 分:秒。</summary>
+    /// <summary>时长显示：不足 1 分钟显示秒，否则 分:秒。</summary>
     public string DurationText
     {
         get
@@ -87,7 +86,7 @@ public sealed class TrackRowVM : INotifyPropertyChanged
         Candidate.Name.Contains("drum", StringComparison.OrdinalIgnoreCase) ||
         Candidate.Name.Contains("percussion", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>是否可被选作主旋律（打击乐整行禁用）。</summary>
+    /// <summary>能否选作主旋律（打击乐整行禁用）。</summary>
     public bool IsPlayable => !IsPercussion;
 
     /// <summary>载入时被自动推荐为主旋律轨。</summary>
@@ -104,10 +103,9 @@ public sealed class TrackRowVM : INotifyPropertyChanged
         }
     }
 
-    /// <summary>名称列显示：推荐轨带 ★ 标记。</summary>
+    /// <summary>推荐轨名称带 ★ 标记。</summary>
     public string DisplayName => IsRecommended ? Name + " ★推荐" : Name;
 
-    /// <summary>推荐轨加粗显示。</summary>
     public Avalonia.Media.FontWeight NameWeight =>
         IsRecommended ? Avalonia.Media.FontWeight.SemiBold : Avalonia.Media.FontWeight.Normal;
 

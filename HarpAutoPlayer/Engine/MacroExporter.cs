@@ -6,16 +6,9 @@ namespace HarpAutoPlayer.Engine;
 
 /// <summary>
 /// 把演奏事件表导出成外部工具能用的按键脚本。
-///
-/// 导出内容与「实际演奏」走同一套调度（<see cref="PlaybackEngine.BuildSchedulePreview"/>），
-/// 因此导出结果与播放时发出的按键完全一致，包括修饰键（鼠标左/右/中键）的按下与抬起。
-///
-/// 支持三种格式：
-///   · LogitechGHub  —— 罗技 G HUB 的 Lua 脚本（G HUB → 游戏与应用程序 → 编写脚本 → 编辑 → 粘贴保存）
-///   · KeystrokeCsv  —— 通用 CSV（时刻/动作/按键），可用于任何支持导入按键时序的工具
-///
-/// 注意：雷蛇 Synapse 的宏文件是私有格式、没有官方规范，硬编一个格式很容易导入失败，
-/// 因此不提供"一键导入"文件；雷蛇用户请用 CSV/文本，或直接用宏录制功能录一遍。
+/// 与「实际演奏」共用同一套调度（<see cref="PlaybackEngine.BuildSchedulePreview"/>），导出结果与播放时发出的按键完全一致。
+/// 支持 LogitechGHub（罗技 G HUB 的 Lua）与 KeystrokeCsv（通用 CSV 时刻/动作/按键）。
+/// 雷蛇 Synapse 宏是私有格式、无官方规范，硬编很容易导入失败，故不提供一键导入，建议用 CSV 或宏录制。
 /// </summary>
 public static class MacroExporter
 {
@@ -29,13 +22,9 @@ public static class MacroExporter
     };
 
     /// <summary>
-    /// 由映射后的音符生成按键脚本。
+    /// 由映射后的音符生成按键脚本。notes 可含超音域音（会自动跳过）；
+    /// speed 用于把音乐时间换算成实际播放时刻；timing 决定修饰键提前量，需与实际演奏一致。
     /// </summary>
-    /// <param name="notes">映射后的音符（可含超音域音，会自动跳过）。</param>
-    /// <param name="format">导出格式。</param>
-    /// <param name="speed">把音乐时间换算成实际播放时刻的倍率（与界面上的速度一致）。</param>
-    /// <param name="timing">时序预算（决定修饰键提前量等，保持一致即可）。</param>
-    /// <param name="songName">写进脚本注释的曲名。</param>
     public static string Build(IReadOnlyList<MappedNote> notes, Format format,
                                double speed = 1.0, InputTiming? timing = null,
                                string songName = "")

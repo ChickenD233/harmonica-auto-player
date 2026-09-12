@@ -2,26 +2,21 @@ namespace HarpAutoPlayer.Engine;
 
 /// <summary>
 /// 输入时序预算（全部为**物理毫秒**，与播放速度无关）。
-///
-/// 为什么需要它：游戏按键是**按帧采样**的（DirectInput/RawInput 状态型读取），
-/// 30fps 一帧 33ms、60fps 一帧 16.7ms。若"修饰键按下"与"音键按下"的间隔
-/// 小于一帧，这一簇事件会被折进同一帧，游戏只认到修饰键变化、漏掉音键 → 漏音。
-/// 所以这些间隔必须按物理帧给足，不能被速度除小。
-///
-/// 档位含义见 <see cref="Safe"/> / <see cref="Standard"/> / <see cref="Aggressive"/>。
+/// 游戏按键按帧采样（30fps=33ms/帧），修饰键与音键间隔小于一帧会被折进同一帧而漏音，
+/// 因此这些间隔必须按物理帧给足，不能被速度除小。
 /// </summary>
 public sealed record InputTiming
 {
     /// <summary>游戏采样帧长估计（16.7 = 60fps；33.3 = 30fps）。</summary>
     public double FrameMs { get; init; } = 16.7;
 
-    /// <summary>修饰键（鼠标左/右/中键）必须比音键早这么多，保证游戏在正确修饰状态下采样到音键。</summary>
+    /// <summary>修饰键（鼠标左/右/中键）必须比音键早这么多，才能被正确采样到。</summary>
     public double ModLeadMs { get; init; } = 40.0;      // ≈ 2.5 帧 @60fps
 
-    /// <summary>同一根音键两次按下之间的最小间隔（让游戏看到"抬起"那一帧，否则两音粘成一个）。</summary>
+    /// <summary>同一根音键两次按下的最小间隔（要跨过"抬起"帧，否则两音粘连）。</summary>
     public double RetriggerMs { get; init; } = 45.0;    // ≈ 3 帧 @60fps
 
-    /// <summary>音键最短按住时长（避免"按下即抬起"被折进同一帧）。</summary>
+    /// <summary>音键最短按住时长（避免按下与抬起被折进同一帧）。</summary>
     public double MinHoldMs { get; init; } = 45.0;      // ≈ 3 帧 @60fps
 
     /// <summary>前音抬起 → 后音按下之间的最小间隔（跨帧安全边距）。</summary>
@@ -72,8 +67,8 @@ public sealed record InputTiming
 }
 
 /// <summary>
-/// 输入时序诊断：统计"音键按下时，修饰键已经稳定了多久"，用于在真机上验证是否还有漏音。
-/// 数值异常（修饰键提前量不足一帧、同刻、同键重触发过密）就是漏音的现场证据。
+/// 输入时序诊断：统计"音键按下时修饰键已稳定多久"，用于在真机验证是否还有漏音；
+/// 修饰键提前量不足一帧、同刻、同键重触发过密即为漏音的现场证据。
 /// </summary>
 public sealed class InputTimingProbe
 {

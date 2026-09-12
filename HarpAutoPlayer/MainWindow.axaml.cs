@@ -13,10 +13,7 @@ using HarpAutoPlayer.Persist;
 
 namespace HarpAutoPlayer;
 
-/// <summary>
-/// 主窗口：选择主旋律、播放/暂停/停止、热键、进度跳转、实时变速/移调，
-/// 支持托盘后台、记住设置、本地日志与呼吸休止选项。
-/// </summary>
+/// <summary>主窗口：选主旋律与播放控制、全局热键、进度跳转、实时变速/移调，托盘后台与设置记忆。</summary>
 public partial class MainWindow : Window
 {
     private readonly ObservableCollection<TrackRowVM> _tracks = new();
@@ -66,7 +63,7 @@ public partial class MainWindow : Window
         HotkeyControlCombo.ItemsSource = fkeys;
         HotkeyControlCombo.SelectedIndex = 6;   // F6
 
-        // 输入兼容档位：稳健 / 标准 / 极限（决定修饰键与音键之间的物理时间余量）
+        // 输入兼容档位：决定修饰键与音键之间的物理时间余量
         TimingCombo.ItemsSource = InputTiming.Names;
         TimingCombo.SelectedIndex = 1;          // 标准
 
@@ -99,7 +96,7 @@ public partial class MainWindow : Window
             Input.GlobalHotkeys.Start();
         }
 
-        // 进度条：捕获“已被滑块内部处理”的指针事件，实现任意位置点击/拖动跳转
+        // 捕获“已被滑块内部处理”的指针事件，实现任意位置点击/拖动跳转
         SliderProgress.AddHandler(InputElement.PointerPressedEvent, Progress_PointerPressed,
             RoutingStrategies.Bubble, handledEventsToo: true);
         SliderProgress.AddHandler(InputElement.PointerMovedEvent, Progress_PointerMoved,
@@ -120,15 +117,15 @@ public partial class MainWindow : Window
         UpdateTransportUi();
         _uiReady = true;
 
-        // 启动即做一次自检，让那一行状态从一开始就有结论
+        // 启动即自检，状态行从一开始就有结论
         RunPreflight();
 
-        // 后台静默检查新版本（不阻塞界面；没网就悄悄跳过）
+        // 后台静默查更新（不阻塞界面；没网就跳过）
         _ = CheckUpdateAsync();
 
         InsertLog("欢迎使用 口琴自动演奏器（三角洲行动）");
-        InsertLog("用法：打开 MIDI 文件 → 在左侧单击一行作为主旋律 → 按 F6（或点「▶ 播放」），倒计时内切到游戏并装备口琴即可。");
-        InsertLog("控制热键：F6 = 空闲开始 / 播放暂停 / 暂停继续（游戏中直接生效，可在“控制热键”里改）。");
+        InsertLog("用法：打开 MIDI → 点一行作为主旋律 → 按 F6，倒计时内切到游戏并装备口琴。");
+        InsertLog("控制热键：F6 = 开始 / 暂停 / 继续（游戏中生效，可改）。");
         if (OperatingSystem.IsWindows())
         {
             SetupTray();
@@ -190,10 +187,7 @@ public partial class MainWindow : Window
         if (hot != 0 && code == hot) ToggleControl();
     }
 
-    /// <summary>
-    /// 统一控制键（默认 F6）：空闲按 = 开始；倒计时中再按 = 取消开始；
-    /// 播放中按 = 暂停；暂停中按 = 继续。界面 ▶ 按钮与托盘项都走这里，行为一致。
-    /// </summary>
+    /// <summary>统一控制键（默认 F6）：空闲=开始、倒计时中=取消、播放中=暂停、暂停中=继续；按钮与托盘项共用。</summary>
     private void ToggleControl()
     {
         var eng = _engine;
@@ -204,7 +198,7 @@ public partial class MainWindow : Window
         }
         if (_busy)   // 正在倒计时：再按一次 = 取消本次开始
         {
-            InsertLog("已取消本次开始（控制键），可换好歌后再按一次重新开始。");
+            InsertLog("已取消本次开始，可换好歌后再按一次。");
             _countdownTimer?.Stop();
             _countdownTimer = null;
             ResetUi();
@@ -232,25 +226,22 @@ public partial class MainWindow : Window
         {
             eng.Pause();
             LblStatus.Foreground = FailBrush;
-            LblStatus.Text = "已暂停 —— 按 F6 或点「▶ 继续」重新开始";
+            LblStatus.Text = "已暂停 —— 按 F6 或点「▶ 继续」";
         }
         UpdateTransportUi();
     }
 
     // ================= 状态区 / 按钮提示 =================
 
-    /// <summary>空闲时的状态区提示（人话，不是干巴巴的空白）。</summary>
+    /// <summary>空闲时的状态区提示。</summary>
     private void SetIdleHint()
     {
         LblStatus.Foreground = NeutralBrush;
         LblStatus.FontSize = 15;
-        LblStatus.Text = "打开 MIDI 并点选主旋律 → 按 F6 或点 ▶ 播放（同一个键：再按暂停 / 再按继续）";
+        LblStatus.Text = "打开 MIDI 并点选主旋律 → 按 F6 或点 ▶ 播放";
     }
 
-    /// <summary>
-    /// 按当前状态统一播放按钮与热键提示：
-    /// 空闲=▶播放(F6)；播放中=⏸暂停；暂停中=▶继续。停止按钮倒计时里可用。
-    /// </summary>
+    /// <summary>按状态切换播放按钮与热键提示；停止按钮在倒计时里也可用。</summary>
     private void UpdateTransportUi()
     {
         var eng = _engine;
@@ -426,7 +417,7 @@ public partial class MainWindow : Window
             var path = files[0].TryGetLocalPath();
             if (string.IsNullOrEmpty(path)) return;
 
-            // 暂停/播放中也能换歌：载入新文件前先停掉当前播放，避免新旧串曲
+            // 暂停/播放中也能换歌：先停掉当前播放，避免新旧串曲
             StopPlaybackForNewFile();
 
             try
@@ -463,7 +454,7 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>载入新 MIDI 前，把还在播放/暂停的旧曲子停掉（松开按键、释放引擎）。</summary>
+    /// <summary>换歌前停掉旧曲（松开按键、释放引擎）。</summary>
     private void StopPlaybackForNewFile()
     {
         if (_engine is not { IsRunning: true }) return;
@@ -473,10 +464,7 @@ public partial class MainWindow : Window
 
     // ================= 主旋律选择 =================
 
-    /// <summary>
-    /// 载入后自动挑一条最像主旋律的轨并选中（人不满意可再点其它行）。
-    /// 依据：非打击乐、轨道名像旋律（旋律/人声/主唱/Lead…）、音域贴合口琴。
-    /// </summary>
+    /// <summary>载入后自动挑最像主旋律的轨并选中。依据：非打击乐、轨名像旋律、音域贴合口琴。</summary>
     private void ChooseRecommendedTrack()
     {
         TrackRowVM? best = null;
@@ -493,16 +481,16 @@ public partial class MainWindow : Window
         }
         if (best == null)
         {
-            InsertLog("没有找到适合口琴的旋律轨（全是打击乐？），请手动点选一行试试。");
+            InsertLog("没有适合口琴的旋律轨（全是打击乐？），请手动点选一行。");
             return;
         }
 
         best.IsRecommended = true;
         TrackList.SelectedItem = best;   // 触发 SelectionChanged → SetMain → 高亮
         if (bestScore >= 20)
-            InsertLog($"已自动选中推荐轨：{best.DisplayName}（非打击乐、最像旋律、音域贴合；想换就点其它行）。");
+            InsertLog($"已自动选中推荐轨：{best.DisplayName}（想换就点其它行）");
         else
-            InsertLog($"已自动选中较合适的轨：{best.DisplayName}（音域贴合的不多，可再用「一键移调」调整）。");
+            InsertLog($"已自动选中较合适的轨：{best.DisplayName}（音域贴合不多，可用「一键移调」）");
     }
 
     private double ScoreCandidate(TrackRowVM r)
@@ -592,7 +580,7 @@ public partial class MainWindow : Window
         }
         var merged = NoteMapper.MergeVoicesByPriority(voices);
 
-        // “去除开头空拍”：把整条旋律平移到第一个音从 0 秒开始（MIDI 开头常有几小节休止）
+        // “去除开头空拍”：整条旋律平移到第一个音从 0 秒开始（开头常有休止）
         if (ChkTrimLead.IsChecked == true)
         {
             double before = merged.Count == 0 ? 0 : merged.Min(n => n.Start);
@@ -630,7 +618,7 @@ public partial class MainWindow : Window
             var playable = map.Notes.Where(n => n.InRange).ToList();
             if (playable.Count == 0)
             {
-                InsertLog("没有可演奏的音，无法导出。请先调整「移调」或换一行。");
+                InsertLog("没有可演奏的音，无法导出。请调整「移调」或换一行。");
                 return;
             }
 
@@ -664,13 +652,13 @@ public partial class MainWindow : Window
             }
             await File.WriteAllTextAsync(outPath, content, new UTF8Encoding(true));
 
-            InsertLog($"已导出按键表：{playable.Count} 个音 / {nEvents} 个事件 / 时长 {seconds:F1}s" +
-                      $"（速度 {speed * 100:F0}%、时序档位 {timing.Name}）");
+            InsertLog($"已导出按键表：{playable.Count} 音 / {nEvents} 事件 / {seconds:F1}s" +
+                      $"（速度 {speed * 100:F0}%、档位 {timing.Name}）");
             InsertLog($"　文件：{outPath}");
             if (format == MacroExporter.Format.LogitechGHub)
-                InsertLog("　罗技 G HUB 用法：G HUB → 设备 → 游戏与应用程序 → 添加游戏 → 编写脚本 → 编辑脚本 → 整段粘贴保存。");
+                InsertLog("　G HUB 用法：设备 → 游戏与应用程序 → 添加游戏 → 编写脚本 → 整段粘贴保存。");
             else
-                InsertLog("　提示：雷蛇 Synapse 的宏文件是私有格式（无官方规范），请用本文件配合其宏录制，或使用支持导入按键时序的工具。");
+                InsertLog("　提示：雷蛇 Synapse 宏是私有格式，请用其宏录制功能代替。");
         }
         catch (Exception ex)
         {
@@ -698,16 +686,13 @@ public partial class MainWindow : Window
         SliderTranspose.Value = best;   // 触发滑块事件：保存设置并刷新预览
         string sign = best > 0 ? "+" : "";
         if (bestSkip == 0)
-            InsertLog($"一键移调：整体 {sign}{best} 半音后全部音都在口琴音域内。");
+            InsertLog($"一键移调：整体 {sign}{best} 半音后全部音在音域内。");
         else
-            InsertLog($"一键移调：整体 {sign}{best} 半音后仍剩 {bestSkip} 个音超音域（旋律本身跨度过大，超出部分仍会空拍）。");
+            InsertLog($"一键移调：整体 {sign}{best} 半音后仍剩 {bestSkip} 个音超音域（跨度过大，仍会空拍）");
         RefreshPreview();
     }
 
-    /// <summary>
-    /// 勾选“合”：勾选先后即主次（先勾=1 主，后勾=2、3…）。
-    /// 勾完立即刷新，勾选本身就能点播放，无需再点行。
-    /// </summary>
+    /// <summary>勾选“合”：勾选先后即主次（先勾=1 主）；勾完立即刷新，可直接播放。</summary>
     private void Mix_Changed(object? sender, RoutedEventArgs e)
     {
         if (sender is CheckBox cb && cb.DataContext is TrackRowVM row)
@@ -752,9 +737,7 @@ public partial class MainWindow : Window
 
     // ================= 播放前自检 =================
 
-    /// <summary>
-    /// 播放前自检：管理员权限、前台输入法两项，结果直接显示在界面那一行（✔ / ✘），不写日志。
-    /// </summary>
+    /// <summary>播放前自检管理员权限与前台输入法，结果显示在界面状态行（✔ / ✘），不写日志。</summary>
     private void RunPreflight()
     {
         PreflightCheck.Report report;
@@ -811,10 +794,7 @@ public partial class MainWindow : Window
 
     // ================= 自动检查更新 =================
 
-    /// <summary>
-    /// 后台查询 GitHub 最新 Release。有新版本 → 顶部显示提示条（点击跳转下载）；
-    /// 没有 / 没网 / 被墙都静默忽略，绝不打扰使用。
-    /// </summary>
+    /// <summary>后台查询 GitHub 最新 Release，有新版则顶部显示提示条；没网/被墙静默忽略。</summary>
     private async Task CheckUpdateAsync()
     {
         try
@@ -828,7 +808,7 @@ public partial class MainWindow : Window
             UiPost(() =>
             {
                 TxtUpdate.Text = $"发现新版本 v{r.LatestTag}（当前 v{r.CurrentTag}）——" +
-                                 "点此打开下载页，或到日志区复制链接。";
+                                 "点此打开下载页。";
                 UpdateBanner.IsVisible = true;
                 InsertLog($"发现新版本：v{r.LatestTag}（当前 v{r.CurrentTag}）　下载页：{r.ReleaseUrl}");
             });
@@ -839,7 +819,7 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>左键点提示条 = 打开下载页；右键点 = 跳过这个版本（不再提示，下个版本仍会提示）。</summary>
+    /// <summary>左键点提示条 = 打开下载页；右键点 = 跳过本版本（下个版本仍会提示）。</summary>
     private void UpdateBanner_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (string.IsNullOrEmpty(_updateUrl)) return;
@@ -867,8 +847,8 @@ public partial class MainWindow : Window
         ScheduleSave();
         if (!_uiReady) return;
         var t = InputTiming.FromIndex(TimingCombo.SelectedIndex);
-        InsertLog($"输入兼容档位：{t.Name}（帧长 {t.FrameMs:F0}ms、修饰键提前 {t.ModLeadMs:F0}ms、" +
-                  $"同键重触发 {t.RetriggerMs:F0}ms）");
+        InsertLog($"输入兼容档位：{t.Name}（帧 {t.FrameMs:F0}ms、修饰键提前 {t.ModLeadMs:F0}ms、" +
+                  $"重触发 {t.RetriggerMs:F0}ms）");
     }
 
     /// <summary>「播放后自动最小化窗口」：只影响开始播放时是否缩窗，不需要刷新预览。</summary>
@@ -877,10 +857,7 @@ public partial class MainWindow : Window
         ScheduleSave();
     }
 
-    /// <summary>
-    /// 刷新"需要选中声轨才能用"的按钮（一键移调、导出按键表）。
-    /// 只要勾选/点选了任意声轨就可用；播放中也可导出。
-    /// </summary>
+    /// <summary>刷新需选中声轨才能用的按钮（一键移调、导出），播放中也能导出。</summary>
     private void UpdateActionButtons()
     {
         bool hasRows = ActiveRows().Count > 0;
@@ -903,8 +880,8 @@ public partial class MainWindow : Window
         if (rows.Count == 0 || _parsed == null)
         {
             LblMelody.Text = _parsed == null
-                ? "打开 MIDI 文件，并在左侧单击一行作为主旋律（可勾选“合”多个声部一起吹）。"
-                : "已载入文件 —— 单击一行作为主旋律；勾选“合”可按 1、2、3 优先级把多个声部一起吹。";
+                ? "打开 MIDI 文件并单击一行作为主旋律（可勾选“合”多声部一起吹）。"
+                : "已载入 —— 单击一行作为主旋律；勾选“合”可按 1、2、3 优先级合奏。";
             LblWarn.Text = "";
             LblWarn.Foreground = warnColor;
             UpdateTransportUi();
@@ -928,12 +905,12 @@ public partial class MainWindow : Window
         {
             LblWarn.Text = m.Notes.Count == 0
                 ? "该轨道/声道没有音符，请换一行。"
-                : "所有音都超出可演奏音域（低音do~高高音#do），无法演奏——请把“移调”调到 0 附近再试。";
+                : "所有音都超出音域（低音do~高高音#do），请把“移调”调到 0 附近再试。";
             LblWarn.Foreground = warnColor;
         }
         else if (m.SkipCount > 0)
         {
-            LblWarn.Text = $"有 {m.SkipCount} 个音超出可演奏音域（低音do~高高音#do），无法演奏，将自动空拍（可用“移调”调整）。";
+            LblWarn.Text = $"有 {m.SkipCount} 个音超出音域（低音do~高高音#do），将自动空拍（可用“移调”调整）。";
             LblWarn.Foreground = warnColor;
         }
         else
@@ -975,7 +952,7 @@ public partial class MainWindow : Window
         {
             _countdownLeft = cd;
             UpdateCountdownText();
-            InsertLog($"{cd} 秒后自动开始吹奏——请切到游戏窗口并装备口琴…");
+            InsertLog($"{cd} 秒后开始——请切到游戏窗口并装备口琴…");
             _countdownTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _countdownTimer.Tick += (_, _) =>
             {
@@ -1013,7 +990,7 @@ public partial class MainWindow : Window
     {
         LblStatus.Foreground = FailBrush;
         LblStatus.FontSize = 38;   // 切游戏前的最后几秒必须一眼看到
-        LblStatus.Text = $"{_countdownLeft} 秒后开始 —— 请切到游戏并装备口琴（再按 F6 可取消）";
+        LblStatus.Text = $"{_countdownLeft} 秒后开始 —— 请切到游戏并装备口琴（F6 可取消）";
         SetCountdownChrome(true);
     }
 
@@ -1029,7 +1006,7 @@ public partial class MainWindow : Window
         if (_playNotes.Count == 0) return;
 
         if (_removedLeadSec > 0.05)
-            InsertLog($"已去除开头空拍 {_removedLeadSec:F1} 秒（“去除开头空拍”勾选生效），旋律将从第 0 秒开始。");
+            InsertLog($"已去除开头空拍 {_removedLeadSec:F1} 秒，旋律从第 0 秒开始。");
 
         var engine = new PlaybackEngine();
         _engine = engine;
@@ -1048,17 +1025,17 @@ public partial class MainWindow : Window
         engine.Timing = InputTiming.FromIndex(TimingCombo.SelectedIndex);
         engine.Play(_playNotes, speed, FixedLeadMs, loop, breath);
         SliderProgress.Maximum = Math.Max(0.1, engine.TotalSeconds);
-        // 播放前自检：把"按键发不进游戏"的常见原因直接指出来，省得用户逐个猜
+        // 自检把“按键发不进游戏”的常见原因指出来，省得用户逐个猜
         RunPreflight();
 
         string fgTitle = InputSender.ForegroundWindowTitle;
-        InsertLog($"开始吹奏；当前前台窗口：{(string.IsNullOrEmpty(fgTitle) ? "（读不到，可能未切到游戏）" : fgTitle)}");
+        InsertLog($"开始吹奏；前台窗口：{(string.IsNullOrEmpty(fgTitle) ? "（读不到，可能未切到游戏）" : fgTitle)}");
         LblStatus.Foreground = OkBrush;
         LblStatus.FontSize = 22;
         SetCountdownChrome(false);
         LblStatus.Text = "演奏中…";
 
-        // 播放后是否自动最小化：由选项决定（放副屏观察进度时可保持窗口）
+        // 是否自动最小化由选项决定（副屏看进度时可保持窗口）
         if (ChkAutoMinimize.IsChecked == true)
         {
             if (WindowState != WindowState.Minimized)
@@ -1068,7 +1045,7 @@ public partial class MainWindow : Window
         {
             if (WindowState == WindowState.Minimized)
                 WindowState = WindowState.Normal;   // 关掉该选项时，若本来缩着就恢复出来
-            InsertLog("（未自动最小化窗口：请点一下游戏画面让游戏获得焦点，否则按键会发到本程序窗口）");
+            InsertLog("（未自动最小化：请点一下游戏画面让它获得焦点，否则按键发到本窗口）");
         }
 
         UpdateTransportUi();
@@ -1165,8 +1142,7 @@ public partial class MainWindow : Window
         ChkTrimLead.IsEnabled = !busy;
         ChkAutoMinimize.IsEnabled = !busy;
         CountdownCombo.IsEnabled = !busy;
-        // 一键移调 / 导出按键表 的可用性统一由 UpdateActionButtons() 决定
-        // （只要选中了声轨就能用，不必等播放结束），这里不再覆盖。
+        // 一键移调 / 导出的可用性统一由 UpdateActionButtons() 决定，这里不再覆盖。
         UpdateActionButtons();
 
         UpdateTransportUi();
@@ -1187,7 +1163,7 @@ public partial class MainWindow : Window
         }
         try
         {
-            // 图标从程序内置资源读取（单文件发布时旁边没有 Assets 目录，必须用资源）
+            // 图标必须走内置资源：单文件发布时旁边没有 Assets 目录
             WindowIcon? icon = null;
             try
             {
@@ -1225,7 +1201,7 @@ public partial class MainWindow : Window
                 Menu = menu,
                 IsVisible = true
             };
-            InsertLog("托盘图标已创建（如未显示，请看任务栏通知区“上箭头”内）。");
+            InsertLog("托盘图标已创建（如未显示，看任务栏通知区“上箭头”内）");
         }
         catch (Exception ex)
         {
@@ -1276,10 +1252,7 @@ public partial class MainWindow : Window
         ForceReleaseKeysForGame();
     }
 
-    /// <summary>
-    /// 彻底松开所有按键/鼠标键。停止时焦点在本窗口，第一次松开可能被本窗口接收；
-    /// 把焦点还回记住的游戏窗口后再补发一次，确保游戏一定收到“抬起”。
-    /// </summary>
+    /// <summary>彻底松开按键/鼠标键：停止时焦点在本窗口，先把焦点还给记住的游戏窗口再补发一次。</summary>
     private void ForceReleaseKeysForGame()
     {
         try

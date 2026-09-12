@@ -2,8 +2,7 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
   <!-- ===================== 调色板（唯一真源） =====================
-       要换配色只改这里；MainWindow 里不再出现裸的 #RRGGBB。
-       品牌色 = 口琴绿 #2E8B57（Fluent 的滑块/勾选框也吃这个色，见 App.axaml 的 SystemAccentColor）。 -->
+       换配色只改这里，MainWindow 里不再出现裸 #RRGGBB；品牌绿需与 App.axaml 的 SystemAccentColor 保持一致。 -->
 
   <!-- 背景与表面 -->
   <SolidColorBrush x:Key="BrushCanvas"       Color="#F4F6F9"/>
@@ -45,11 +44,11 @@
   <SolidColorBrush x:Key="BrushCountdownChrome" Color="#FFF3E4D8"/>
 
   <!-- ===================== 字体 =====================
-       Windows 优先雅黑；macOS/Linux 回退到苹方/思源，避免整窗掉到默认字体。 -->
+       Windows 用雅黑；macOS/Linux 回退苹方/思源，避免整窗掉到默认字体。 -->
   <FontFamily x:Key="FontUi">Microsoft YaHei UI, 微软雅黑, PingFang SC, Hiragino Sans GB, Noto Sans CJK SC, Source Han Sans SC, Segoe UI, Helvetica Neue, sans-serif</FontFamily>
   <FontFamily x:Key="FontMono">Cascadia Mono, Consolas, SF Mono, Menlo, DejaVu Sans Mono, monospace</FontFamily>
 
-  <!-- ===================== 字号刻度（收敛原来的 7 档） ===================== -->
+  <!-- ===================== 字号刻度（原来的 7 档收敛而来） ===================== -->
   <x:Double x:Key="FontMicro">11</x:Double>
   <x:Double x:Key="FontCaption">11.5</x:Double>
   <x:Double x:Key="FontSmall">12.5</x:Double>

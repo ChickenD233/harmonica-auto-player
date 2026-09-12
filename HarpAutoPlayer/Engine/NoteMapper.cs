@@ -33,11 +33,8 @@ public sealed class MappingResult
 }
 
 /// <summary>
-/// 把主旋律 MIDI 音高映射到游戏口琴的按键方案：
-///  一个八度内 do..ti → 键盘 z x c v b n m；
-///  带 # 的音（升半音）→ 同时按住鼠标中键；
-///  三个八度 → 不按鼠标=基准、按住左键=低八度、按住右键=高八度；
-///  超出三个八度的音 → 空拍（不吹）。
+/// 把主旋律 MIDI 音高映射到游戏口琴按键：一个八度 do..ti → z x c v b n m；
+/// 升半音 → 加按鼠标中键；不按鼠标=基准八度、按左键=低八度、按右键=高八度；超出三个八度则空拍。
 /// </summary>
 public static class NoteMapper
 {
@@ -47,8 +44,7 @@ public static class NoteMapper
     /// <summary>高高音do 用的键：键盘逗号“，”。</summary>
     public const char TopKey = ',';
 
-    /// <summary>某个音高在“基准=baseOct”下是否可演奏。
-    /// 可演奏区 = 基准±1 的完整两个/三个八度，外加最上方 高高音do / 高高音#do。</summary>
+    /// <summary>某个音高在基准=baseOct 下是否可演奏：基准±1 八度，外加最高两个音。</summary>
     private static bool Reachable(int pitch, int baseOct)
     {
         int d = pitch / 12 - 1 - baseOct;
@@ -121,11 +117,9 @@ public static class NoteMapper
     }
 
     /// <summary>
-    /// 执行映射。
+    /// 执行映射。notes 为主旋律原始音符；transpose 为整体移调半音数（-24..+24）；
+    /// manualBaseOctave 为手动基准八度，null 表示自动。
     /// </summary>
-    /// <param name="notes">主旋律原始音符。</param>
-    /// <param name="transpose">整体移调半音数（-24..+24）。</param>
-    /// <param name="manualBaseOctave">手动基准八度；null 表示自动。</param>
     public static MappingResult Map(IReadOnlyList<RawNote> notes, int transpose, int? manualBaseOctave)
     {
         var result = new MappingResult();
@@ -215,10 +209,8 @@ public static class NoteMapper
     }
 
     /// <summary>
-    /// 人声歌的“旋律提取”（伴奏和主唱混在同一轨时用）：
-    /// 人声音区 + 顶音 + 连续性三条线索，把最像人声主旋律的那条线挑出来。
-    /// 规则：只在人声音区（默认 D3~D6）里选音；同刻多音取最高；下一步尽量贴着上一步走，
-    /// 明显离人声音区很远的是低音/和声伴奏 → 自动排除。
+    /// 人声歌的"旋律提取"（伴奏与主唱混在同一轨时用）：按人声音区 + 顶音 + 连续性三条线索挑出最像人声主旋律的线。
+    /// 只在人声音区（默认 D3~D6）内选音；同刻多音取最高；下一步尽量贴着上一步走，离人声音区很远的低音/和声伴奏自动排除。
     /// </summary>
     public static List<RawNote> ExtractVocalMelody(IEnumerable<RawNote> notes)
     {
@@ -265,10 +257,9 @@ public static class NoteMapper
     }
 
     /// <summary>
-    /// 单音化（口琴一次只能吹一个音）——目标：尽量还原原曲主旋律。
-    /// 同一瞬间（±25ms）多个音一起响时，只吹其中【最高】的那个音：
-    /// 流行编曲里主旋律/主声部通常在最高声部，取最高音最贴近原曲的旋律走向。
-    /// 不做“找最近、保持不动”之类的平滑（那会改变原曲旋律）。
+    /// 单音化（口琴一次只能吹一个音），目标尽量还原原曲主旋律。
+    /// 同刻（±25ms）多音一起响时只吹【最高】音：流行编曲主旋律/主声部通常在最高声部，
+    /// 取最高最贴近原曲走向；不做"找最近、保持不动"之类平滑（那会改变原曲旋律）。
     /// </summary>
     public static List<RawNote> ChordRootOnly(IEnumerable<RawNote> notes)
     {
@@ -289,9 +280,8 @@ public static class NoteMapper
     }
 
     /// <summary>
-    /// 多声部合奏合成单音线（按优先级）：
-    /// 同一瞬间多个声部同时响 → 只保留编号最小（Rank 最小）的声部；
-    /// 低优先级音若压在高优先级音的尾音上 → 该段让位（省略低优先级音）。
+    /// 多声部合奏合成单音线：同刻多个声部一起响时只保留编号最小（Rank 最小）的声部；
+    /// 低优先级音压在高优先级音尾音上 → 该段让位。
     /// </summary>
     public static List<RawNote> MergeVoicesByPriority(IEnumerable<(int Rank, RawNote Note)> voices)
     {
@@ -303,8 +293,7 @@ public static class NoteMapper
         if (ordered.Count == 0) return new List<RawNote>();
 
         const double eps = 0.025;
-        // 1) 同一瞬间组内：选优先级最小（Rank 小）者；
-        //    同时刻被压掉的低优先级音若更长，其“超出主声部结束”的尾巴要保留，稍后补回。
+        // 1) 同刻组内选 Rank 最小者；被压掉的低优先级音若更长，"超出主声部结束"的尾巴稍后补回。
         var items = new List<(int Rank, RawNote Note)>();
         int i = 0;
         while (i < ordered.Count)
@@ -366,10 +355,8 @@ public static class NoteMapper
     }
 
     /// <summary>
-    /// 去除开头的整段空拍（休止/空白）：把整条旋律整体平移到第一个音符从 0 秒开始，
-    /// 音符之间的相对时值不变。很多 MIDI 在真正开始前有几小节休止，
-    /// 剪掉后点「播放」就能立刻出音，不用先干等几秒。
-    /// 若开头本来就没有空拍（首音 ≈0s）则原样返回。
+    /// 整体平移旋律，使首音从 0 秒开始（音间相对时值不变）；很多 MIDI 开头有几小节休止，剪掉后点播放立刻出音。
+    /// 首音 ≈0s 时原样返回。
     /// </summary>
     public static List<RawNote> TrimLeadingSilence(IReadOnlyList<RawNote> notes)
     {

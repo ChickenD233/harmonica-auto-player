@@ -4,8 +4,8 @@ using System.Diagnostics;
 namespace HarpAutoPlayer.Input;
 
 /// <summary>
-/// 全局热键（游戏中也能触发）：Windows WH_KEYBOARD_LL 低层键盘钩子，独立消息线程。
-/// 回调在工作线程上触发，UI 需自行 marshal。
+/// 全局热键（游戏中也能触发）：WH_KEYBOARD_LL 低层钩子须配独立消息线程；
+/// 回调在工作线程触发，UI 需自行 marshal。
 /// </summary>
 public static class GlobalHotkeys
 {
@@ -22,7 +22,7 @@ public static class GlobalHotkeys
     public static bool IsAvailable => OperatingSystem.IsWindows();
     public static bool Running => _running;
 
-    /// <summary>功能键虚拟码（F1..F12）。</summary>
+    /// <summary>F1..F12 的虚拟键码。</summary>
     public static int FunctionKeyCode(int n)
     {
         if (n is < 1 or > 12) return 0;
@@ -51,7 +51,7 @@ public static class GlobalHotkeys
     public static void Stop()
     {
         _running = false;
-        // 唤醒钩子线程阻塞的 GetMessage 消息循环
+        // 唤醒阻塞在 GetMessage 的钩子线程
         if (_winThreadId != 0)
             PostThreadMessageW(_winThreadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero);
         _thread = null;
@@ -148,7 +148,7 @@ public static class GlobalHotkeys
                 return;
             }
 
-            _winThreadId = (uint)Environment.CurrentManagedThreadId; // 钩子消息线程即当前线程
+            _winThreadId = (uint)Environment.CurrentManagedThreadId; // Stop() 靠这个 id 唤醒消息循环
             Status?.Invoke("全局热键已启用（游戏中直接生效）");
 
             while (_running && GetMessageW(out _, IntPtr.Zero, 0, 0) > 0)

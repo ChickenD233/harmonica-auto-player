@@ -4,10 +4,7 @@ using System.Text.Json;
 
 namespace HarpAutoPlayer.Engine;
 
-/// <summary>
-/// 检查 GitHub 上有没有新版本（后台静默进行，不影响使用）。
-/// 只在有新版时由界面提示一句，点击可跳转到 Release 页面。
-/// </summary>
+/// <summary>后台静默检查 GitHub 新版本，有新版时界面提示并可跳转 Release 页。</summary>
 public static class AutoUpdate
 {
     private const string Owner = "ChickenD233";
@@ -16,19 +13,14 @@ public static class AutoUpdate
     /// <summary>最新 Release 页面（用于跳转下载）。</summary>
     public static string ReleasesUrl => $"https://github.com/{Owner}/{Repo}/releases";
 
-    /// <summary>
-    /// 当前程序版本（如 1.0.7）。
-    /// 注意：csproj 的 &lt;Version&gt;1.0.7&lt;/Version&gt; 映射到 AssemblyVersion 时是
-    /// 1.0.7.0，即 Major=1 / Minor=0 / **Build=7**（Build 就是第三段，不是"内部版本号"），
-    /// 所以第三段必须取 Build —— 取成 Minor 会得到 1.0.0，导致每次启动都误报有新版。
-    /// </summary>
+    /// <summary>当前程序版本（如 1.0.7，第三段必须取 Build，第四段是内部版本号）。</summary>
     public static string CurrentVersion
     {
         get
         {
             var v = Assembly.GetExecutingAssembly().GetName().Version;
             if (v == null) return "0.0.0";
-            // 用 Math.Max 兜底：未显式指定版本时 Build/Revision 可能是 -1
+            // 未显式指定版本时 Build/Revision 可能是 -1，用 Math.Max 兜底
             return $"{Math.Max(0, v.Major)}.{Math.Max(0, v.Minor)}.{Math.Max(0, v.Build)}";
         }
     }
@@ -44,11 +36,7 @@ public static class AutoUpdate
         public string? Error { get; init; }      // 网络失败等（静默处理，不打扰用户）
     }
 
-    /// <summary>
-    /// 查询最新 Release 并与当前版本比较。
-    /// <paramref name="skippedTag"/> 为用户此前选择"跳过"的版本号；
-    /// 若最新版正好是被跳过的那个，则只返回 HasUpdate=false（可再次询问的机会由界面控制）。
-    /// </summary>
+    /// <summary>查询最新 Release 并与当前版本比较；最新版正好是被跳过的那版则 HasUpdate=false。</summary>
     public static async Task<Result> CheckAsync(string? skippedTag = null,
                                                 CancellationToken ct = default)
     {

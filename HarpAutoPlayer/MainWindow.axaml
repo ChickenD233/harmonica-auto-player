@@ -3,8 +3,8 @@
         xmlns:local="clr-namespace:HarpAutoPlayer"
         x:Class="HarpAutoPlayer.MainWindow"
         Title="口琴自动演奏器（三角洲行动）"
-        Width="1080" Height="680"
-        MinWidth="980" MinHeight="580"
+        Width="1120" Height="860"
+        MinWidth="980" MinHeight="760"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource BrushCanvas}"
         FontFamily="{DynamicResource FontUi}"
@@ -45,6 +45,15 @@
 
     <!-- 左：文件/轨道；右：演奏控制 -->
     <DockPanel Margin="14">
+
+    <!-- 最近一条消息。原来的一整块日志列表已经去掉：占地，且用户基本不看。
+         完整历史仍然写进 %LOCALAPPDATA%\HarpAutoPlayer\play.log。 -->
+    <Border DockPanel.Dock="Bottom" Margin="0,6,0,0" Padding="10,4" CornerRadius="8"
+            Background="{DynamicResource BrushSurfaceAlt}">
+      <TextBlock x:Name="TxtLastMsg" FontSize="{DynamicResource FontCaption}"
+                 Foreground="{DynamicResource BrushTextSecondary}"
+                 TextTrimming="CharacterEllipsis" Text="就绪"/>
+    </Border>
 
     <!-- 免责声明，点击关闭 -->
     <Border DockPanel.Dock="Bottom" Margin="0,12,0,0" Background="{DynamicResource BrushDangerSoft}"
@@ -152,9 +161,11 @@
     </Grid>
 
     <!-- ================= 右栏：演奏 ================= -->
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*">
+    <Grid RowDefinitions="Auto,*,Auto">
 
-      <!-- 更新提示条 + 主旋律信息 -->
+      <!-- 顶部一张卡：状态大字 + 当前主旋律信息。
+           原来这是两张卡（状态一张、主旋律一张），各占一行却都只有一行字，
+           纵向浪费明显，看着也碎。 -->
       <StackPanel Grid.Row="0">
         <Border x:Name="UpdateBanner" IsVisible="False" Classes="card"
                 Margin="0,0,0,12" Padding="12,9" Background="{DynamicResource BrushInfoSoft}"
@@ -165,75 +176,146 @@
                      LineHeight="20" Text=""/>
         </Border>
         <Border Classes="card">
-          <StackPanel>
-            <TextBlock x:Name="LblMelody" TextWrapping="Wrap" FontSize="{DynamicResource FontBody}" LineHeight="22"
+          <StackPanel Spacing="3">
+            <!-- 字号/颜色由代码按状态切换（倒计时时会放大） -->
+            <TextBlock x:Name="LblStatus" FontSize="{DynamicResource FontTitle}" FontWeight="Bold"
+                       Foreground="{DynamicResource BrushSuccess}"
+                       TextAlignment="Center" Text="" TextWrapping="Wrap"/>
+            <TextBlock x:Name="LblMelody" TextWrapping="Wrap" LineHeight="20"
+                       FontSize="{DynamicResource FontBody}" TextAlignment="Center"
                        Text="打开 MIDI 文件，再在左侧点一行作为主旋律"/>
-            <TextBlock x:Name="LblWarn" TextWrapping="Wrap" FontSize="{DynamicResource FontSmall}" Margin="0,4,0,0" Text=""/>
+            <TextBlock x:Name="LblWarn" TextWrapping="Wrap" TextAlignment="Center"
+                       FontSize="{DynamicResource FontSmall}" Text=""/>
           </StackPanel>
         </Border>
       </StackPanel>
 
-      <!-- 状态区：字号/颜色由代码按状态切换。
-           居中用 TextAlignment（TextBlock 撑满卡片内宽再居中），长句才会正常换行。 -->
-      <Border Grid.Row="1" Classes="card" Margin="{DynamicResource CardGap}" Padding="16,14">
-        <TextBlock x:Name="LblStatus" FontSize="{DynamicResource FontDisplay}" FontWeight="Bold"
-                   Foreground="{DynamicResource BrushSuccess}"
-                   TextAlignment="Center" Text="" TextWrapping="Wrap"/>
-      </Border>
-
-      <Border Grid.Row="2" Classes="card" Margin="{DynamicResource CardGap}">
-        <Grid RowDefinitions="Auto,Auto">
-          <!-- 内置卷帘：载入后即可点/拖定位；灰条=超出音域 -->
-          <local:PianoRoll x:Name="Roll" Grid.Row="0" Height="88" Margin="0,0,0,10"
-                           ToolTip.Tip="点或拖动可定位；播放前先调到要开始的秒数"/>
-          <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto">
-            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+      <Border Grid.Row="1" Classes="card" Margin="{DynamicResource CardGap}">
+        <!-- 外层两列：左=工具栏+卷帘+走带，右=用法说明。
+             说明栏必须跨整张卡的高度，不能只跟卷帘同一行 —— 卷帘那一行只有几十像素高，
+             说明会被裁得只剩开头几行，还得滚动才看得到。 -->
+        <Grid ColumnDefinitions="*,Auto">
+          <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto">
+          <!-- 卷帘编辑工具栏。
+               原来是单行横向 StackPanel：窗口拉到 MinWidth(980) 时右栏只剩约 470px，
+               一行放不下十来个控件，末端的「缩小 / 放大 / 全曲」被挤出卡片右缘、显示不全。
+               现在固定两行，并且**所有内容都放在 Auto 列，只留一个 * 空列吸收余量**——
+               这样宽度不足时被压缩的是那片空白，而不是按钮本身（WrapPanel 放在 * 列里
+               实测会「量出一行、摆进更窄的地方」从而直接裁掉末尾控件，不再使用）。 -->
+          <Grid Grid.Row="0" RowDefinitions="Auto,Auto" Margin="0,0,0,6">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto">
+              <TextBlock Grid.Column="0" Text="MIDI 编辑" Classes="sectionLabel"
+                         VerticalAlignment="Center" Margin="0,0,8,0"/>
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button x:Name="BtnUndo" Content="撤销" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                        Classes="secondary" Click="Undo_Click" ToolTip.Tip="Ctrl+Z"/>
+                <Button x:Name="BtnRedo" Content="重做" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                        Classes="secondary" Click="Redo_Click" ToolTip.Tip="Ctrl+Y 或 Ctrl+Shift+Z"/>
+                <Button x:Name="BtnDeleteNote" Content="删除所选" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                        Classes="secondary" Click="DeleteNote_Click" ToolTip.Tip="也可以按 Delete 键，或右键点音符"/>
+              </StackPanel>
+              <!-- 缩放固定贴住卡片右缘，永远可见 -->
+              <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <TextBlock x:Name="TxtZoom" Classes="value" VerticalAlignment="Center" MinWidth="40"
+                           TextAlignment="Right" Text="100%"
+                           ToolTip.Tip="整首歌刚好铺满 = 100%"/>
+                <Button x:Name="BtnZoomOut" Content="缩小" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                        Classes="secondary" Click="ZoomOut_Click" ToolTip.Tip="也可以滚轮向下"/>
+                <Button x:Name="BtnZoomIn" Content="放大" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                        Classes="secondary" Click="ZoomIn_Click" ToolTip.Tip="也可以滚轮向上；Shift+滚轮左右平移；中键拖动平移"/>
+                <Button x:Name="BtnZoomFit" Content="全曲" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                        Classes="secondary" Click="ZoomFit_Click" ToolTip.Tip="缩放到整首歌"/>
+              </StackPanel>
+            </Grid>
+            <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,6,0,0">
+              <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button x:Name="BtnResetEdits" Content="还原为自动" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                        Classes="secondary" Click="ResetEdits_Click" ToolTip.Tip="丢弃全部手动改动，回到自动提取的结果"/>
+                <CheckBox x:Name="ChkSnap" Content="吸附 0.1s" IsChecked="True" VerticalAlignment="Center"
+                          FontSize="{DynamicResource FontCaption}" IsCheckedChanged="Snap_Changed"
+                          ToolTip.Tip="拖动与加音按 0.1 秒对齐。关掉可以自由摆位"/>
+                <CheckBox x:Name="ChkFollow" Content="跟随播放" IsChecked="True" VerticalAlignment="Center"
+                          FontSize="{DynamicResource FontCaption}"
+                          ToolTip.Tip="播放时让卷帘自动跟着播放头滚动；手动滚轮或中键平移后会自动关掉"/>
+                <Button x:Name="BtnExportMidi" Content="导出 MIDI…" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                        Classes="secondary" Click="ExportMidi_Click"
+                        ToolTip.Tip="把当前谱面（含你的改动）写成标准 MIDI 文件"/>
+              </StackPanel>
+              <!-- 帮助按钮贴在「还原为自动」这一行的最右端（正好在上一行「全曲」下面），
+                   与其它按钮同样是框住文字的按钮，不是勾选框 -->
+              <Button Grid.Column="1" x:Name="BtnHelp" Content="帮助"
+                      FontSize="{DynamicResource FontCaption}" Padding="10,3" Margin="8,0,0,0"
+                      Classes="secondary" Click="Help_Click"
+                      ToolTip.Tip="在卷帘右侧显示操作说明。再点一下收起，把宽度让给卷帘"/>
+            </Grid>
+          </Grid>
+          <!-- 卷帘：上=时间标尺，左=琴键栏 -->
+          <local:PianoRoll x:Name="Roll" Grid.Row="1" MinHeight="56" Margin="0,0,0,10"
+                           ToolTip.Tip="标尺拖动=定位；琴键栏点击=选中该音高；拖音符=移动；拖任一端=改长度；空白拖=框选；双击空白=加音；右键=删音；Ctrl+A 全选；Esc 清空；方向键微调"/>
+          <Grid Grid.Row="2" RowDefinitions="Auto,Auto">
+            <!-- 走带按钮与热键提示同一行。用 WrapPanel 而不是 Grid 的 Auto 列：
+                 右栏在最小宽度下只有约 470px，"播放+停止+循环+热键提示" 加起来会超过它，
+                 Grid 的 * 列被压到 0 之后子元素会互相压字（实测 f6 提示会盖住时间）。
+                 WrapPanel 放不下就换行，永远不会重叠。 -->
+            <WrapPanel Grid.Row="0" ItemSpacing="10" LineSpacing="6" VerticalAlignment="Center">
               <Button x:Name="BtnPlay" Content="▶ 播放 (F6)" Click="BtnPlay_Click"
                       Classes="accent" FontSize="{DynamicResource FontTitle}" Padding="20,8" IsEnabled="False"/>
               <Button x:Name="BtnStop" Content="■ 停止" Click="BtnStop_Click"
                       Classes="secondary" FontSize="{DynamicResource FontTitle}" Padding="20,8" IsEnabled="False"/>
+              <!-- 试听：和「停止」一样大的独立按钮。只放声音，不发按键、不走倒计时、不最小化窗口。 -->
+              <Button x:Name="BtnPreview" Content="试听" Click="Preview_Click"
+                      Classes="secondary" FontSize="{DynamicResource FontTitle}" Padding="20,8"
+                      ToolTip.Tip="用系统 MIDI 合成器直接播放当前谱面，不发送任何按键、不走倒计时、不最小化窗口。再点一下停止。"/>
               <CheckBox x:Name="ChkLoop" Content="循环" VerticalAlignment="Center" FontSize="{DynamicResource FontBody}"/>
-            </StackPanel>
-            <Grid Grid.Column="1" ColumnDefinitions="*,Auto,Auto" Margin="16,0,0,0">
+              <TextBlock x:Name="TxtHotHint" Classes="sectionLabel" VerticalAlignment="Center"
+                         Text="F6：开始 / 暂停 / 继续"/>
+            </WrapPanel>
+            <!-- 进度条单独一行。时间与定位音给固定宽度：文字一变宽就会挤动进度条，
+                 播放时看起来就是"一抖一抖"。 -->
+            <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" Margin="0,8,0,0">
               <Slider x:Name="SliderProgress" VerticalAlignment="Center" Margin="0,0,10,0"
                       Minimum="0" Maximum="1" Value="0" IsEnabled="False"/>
-              <TextBlock Grid.Column="1" x:Name="TxtTime" Classes="value"
-                         VerticalAlignment="Center" Text="0.0 / 0.0 s"/>
-              <TextBlock Grid.Column="2" x:Name="TxtSeekNote" Classes="value" Margin="12,0,0,0"
-                         VerticalAlignment="Center" Text="—"/>
+              <TextBlock Grid.Column="1" x:Name="TxtTime" Classes="value" Width="112" TextAlignment="Right"
+                         TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Text="0.0 / 0.0 s"/>
+              <TextBlock Grid.Column="2" x:Name="TxtSeekNote" Classes="value" Width="128" Margin="12,0,0,0"
+                         TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Text="—"/>
             </Grid>
-            <TextBlock Grid.Column="2" x:Name="TxtHotHint" Classes="sectionLabel" VerticalAlignment="Center" Margin="12,0,0,0"
-                       Text="F6：开始 / 暂停 / 继续"/>
           </Grid>
+          </Grid>
+
+          <!-- 帮助：跨整张卡的高度，紧挨卷帘右侧。工具栏的「帮助」按钮可收起。 -->
+          <Border x:Name="RollHelp" Grid.Column="1" Width="188" Margin="12,0,0,0" Padding="10,8"
+                  Background="{DynamicResource BrushSurfaceAlt}"
+                  BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8">
+            <Grid RowDefinitions="Auto,*">
+              <StackPanel Grid.Row="0" Spacing="4">
+                <TextBlock Text="怎么改谱" Classes="sectionLabel" FontWeight="SemiBold"
+                           FontSize="{DynamicResource FontCaption}"/>
+                <TextBlock FontSize="{DynamicResource FontCaption}" TextWrapping="Wrap" LineHeight="15"
+                           Foreground="{DynamicResource BrushTextSecondary}">
+                  <Run Text="颜色："/>
+                  <Run Text="绿" Foreground="#2E9E5B"/><Run Text="可演奏　"/>
+                  <Run Text="灰" Foreground="#A9B3C0"/><Run Text="超出音域"/>
+                </TextBlock>
+              </StackPanel>
+              <!-- 一行一条：左列操作、右列作用。两列同一个 LineHeight，行与行自然对齐。 -->
+              <ScrollViewer Grid.Row="1" Margin="0,6,0,0" VerticalScrollBarVisibility="Auto">
+                <Grid ColumnDefinitions="Auto,Auto">
+                  <TextBlock Grid.Column="0" LineHeight="16" FontSize="{DynamicResource FontCaption}"
+                             Foreground="{DynamicResource BrushText}" TextAlignment="Left"
+                             Text="拖音符&#x0a;拖音符两端&#x0a;空白处拖&#x0a;双击空白&#x0a;右键&#x0a;点左侧琴键&#x0a;标尺点或拖&#x0a;方向键&#x0a;Delete&#x0a;Ctrl+A&#x0a;Esc&#x0a;Ctrl+Z / Y&#x0a;滚轮&#x0a;Shift+滚轮&#x0a;中键拖动"/>
+                  <TextBlock Grid.Column="1" LineHeight="16" Margin="10,0,0,0" FontSize="{DynamicResource FontCaption}"
+                             Foreground="{DynamicResource BrushTextSecondary}" TextWrapping="NoWrap"
+                             Text="移动（多选整组动）&#x0a;改长度（左改头右改尾）&#x0a;框选多个音符&#x0a;加一个音&#x0a;删音（可按住连擦）&#x0a;选中该音高全部音符&#x0a;定位播放位置&#x0a;微调（Shift 加速）&#x0a;删除所选&#x0a;全选&#x0a;清空选择&#x0a;撤销 / 重做&#x0a;缩放&#x0a;左右平移&#x0a;左右平移"/>
+                </Grid>
+              </ScrollViewer>
+            </Grid>
+          </Border>
         </Grid>
       </Border>
 
-      <!-- 播放前自检：通过打勾、未通过打叉。用 WrapPanel 让长提示换行 -->
-      <Border Grid.Row="4" Classes="card" Margin="{DynamicResource CardGap}" Padding="12,9" Background="{DynamicResource BrushSurfaceAlt}">
-        <WrapPanel ItemSpacing="18" LineSpacing="8">
-          <TextBlock Text="播放前自检" Classes="sectionLabel" VerticalAlignment="Center"/>
-          <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center"
-                      ToolTip.Tip="游戏以管理员运行时，本程序也要以管理员运行，否则按键被拦截">
-            <TextBlock x:Name="TxtCheckAdminMark" Text="–" FontSize="{DynamicResource FontBody}" FontWeight="Bold"
-                       Foreground="{DynamicResource BrushTextMuted}" VerticalAlignment="Center"/>
-            <TextBlock x:Name="TxtCheckAdmin" Text="管理员" FontSize="{DynamicResource FontSmall}" VerticalAlignment="Center"/>
-          </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center"
-                      ToolTip.Tip="输入法会截走按键，请切到英文">
-            <TextBlock x:Name="TxtCheckImeMark" Text="–" FontSize="{DynamicResource FontBody}" FontWeight="Bold"
-                       Foreground="{DynamicResource BrushTextMuted}" VerticalAlignment="Center"/>
-            <TextBlock x:Name="TxtCheckIme" Text="输入法" FontSize="{DynamicResource FontSmall}" VerticalAlignment="Center"/>
-          </StackPanel>
-          <TextBlock x:Name="TxtCheckHint" Classes="caption" Foreground="{DynamicResource BrushWarn}"
-                     VerticalAlignment="Center"/>
-          <Button x:Name="BtnRecheck" Content="刷新" FontSize="{DynamicResource FontCaption}" Padding="10,3"
-                  Classes="secondary" VerticalAlignment="Center" Click="BtnRecheck_Click"
-                  ToolTip.Tip="重新检测。切换输入法后点一下"/>
-        </WrapPanel>
-      </Border>
-
       <!-- 选项区：分三行，避免一个 WrapPanel 里堆十几个控件 -->
-      <StackPanel Grid.Row="3" Spacing="10" Margin="{DynamicResource CardGap}">
+      <StackPanel Grid.Row="2" Spacing="10" Margin="{DynamicResource CardGap}">
 
         <!-- 第 1 行：演奏参数 -->
         <Border Classes="card" Padding="14,10">
@@ -264,87 +346,100 @@
               <ComboBox x:Name="CountdownCombo" Width="104" FontSize="{DynamicResource FontSmall}" SelectedIndex="1"
                         VerticalAlignment="Center" SelectionChanged="CountdownCombo_Changed"/>
             </StackPanel>
-          </WrapPanel>
-        </Border>
 
-        <!-- 第 2 行：兼容性与导出 -->
-        <Border Classes="card" Padding="14,10">
-          <WrapPanel ItemSpacing="22" LineSpacing="8">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <TextBlock Text="输入兼容" Classes="label"
-                         ToolTip.Tip="游戏按键按帧读取，修饰键与音键间隔太短会被折进同一帧，导致漏音。这里给时间余量。"/>
-              <ComboBox x:Name="TimingCombo" Width="158" FontSize="{DynamicResource FontSmall}" SelectedIndex="1"
-                        VerticalAlignment="Center" SelectionChanged="Timing_Changed"
-                        ToolTip.Tip="稳健=掉帧留余量；标准=60fps 推荐；极限=高帧率跟快歌。仍漏音就选稳健"/>
-            </StackPanel>
-
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <TextBlock Text="控制热键" Classes="label"
-                         ToolTip.Tip="一个键四用：空闲=开始，播放=暂停，暂停=继续，倒计时=取消"/>
-              <ComboBox x:Name="HotkeyControlCombo" Width="86" FontSize="{DynamicResource FontSmall}"
-                        VerticalAlignment="Center" SelectionChanged="Hotkey_Changed"
-                        ToolTip.Tip="默认 F6"/>
-            </StackPanel>
-
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <TextBlock Text="后退热键" Classes="label"
-                         ToolTip.Tip="按一下后退 5 秒。播放中跳转可能让游戏侧口琴卡音"/>
-              <ComboBox x:Name="HotkeyRewindCombo" Width="86" FontSize="{DynamicResource FontSmall}"
-                        VerticalAlignment="Center" SelectionChanged="Hotkey_Changed"
-                        ToolTip.Tip="默认 F5"/>
-            </StackPanel>
-
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <TextBlock Text="前进热键" Classes="label"
-                         ToolTip.Tip="按一下前进 5 秒。播放中跳转可能让游戏侧口琴卡音"/>
-              <ComboBox x:Name="HotkeyForwardCombo" Width="86" FontSize="{DynamicResource FontSmall}"
-                        VerticalAlignment="Center" SelectionChanged="Hotkey_Changed"
-                        ToolTip.Tip="默认 F7"/>
-            </StackPanel>
-
-            <Button x:Name="BtnExport" Content="导出按键表 ▾" FontSize="{DynamicResource FontSmall}"
-                    Padding="12,5" Classes="secondary" VerticalAlignment="Center" IsEnabled="False"
-                    ToolTip.Tip="导出按键时序，与实际演奏一致">
-              <Button.Flyout>
-                <MenuFlyout Placement="Bottom">
-                  <MenuItem Header="罗技 G HUB 脚本 (.lua)" Click="ExportGhub_Click"/>
-                  <MenuItem Header="通用 CSV (.csv)" Click="ExportCsv_Click"/>
-                </MenuFlyout>
-              </Button.Flyout>
-            </Button>
-          </WrapPanel>
-        </Border>
-
-        <!-- 第 3 行：其它选项 -->
-        <Border Classes="card" Padding="14,10">
-          <WrapPanel ItemSpacing="20" LineSpacing="6">
-            <CheckBox x:Name="ChkChordRoot" Content="自动提取主旋律" FontSize="{DynamicResource FontBody}"
+            <!-- 「去除开头空拍」原本在左栏底部独占一张卡，现在只有它一个选项了，
+                 合并到「演奏参数」这一行更省地方，也不再多一张孤零零的小卡。 -->
+            <CheckBox x:Name="ChkTrimLead" Content="去除开头空拍" FontSize="{DynamicResource FontSmall}"
                       IsChecked="True" VerticalAlignment="Center"
-                      ToolTip.Tip="开：分出各声部，挑最像主旋律的一条。关：同刻多音直接交给下面的逻辑"
+                      ToolTip.Tip="剪掉开头的休止，让旋律从第 0 秒开始。注意它会把整条旋律往前挪，卷帘左下角会标出剪掉了多少秒"
                       IsCheckedChanged="Option_Changed"/>
-            <CheckBox x:Name="ChkVocalExtract" Content="人声旋律提取" FontSize="{DynamicResource FontBody}"
-                      IsChecked="False" VerticalAlignment="Center"
-                      ToolTip.Tip="伴奏与主唱同一轨时用：只在人声音区取音，过滤低音与和声"
-                      IsCheckedChanged="Option_Changed"/>
-            <CheckBox x:Name="ChkTrimLead" Content="去除开头空拍" FontSize="{DynamicResource FontBody}"
-                      IsChecked="True" VerticalAlignment="Center"
-                      ToolTip.Tip="剪掉开头的休止，让旋律从第 0 秒开始"
-                      IsCheckedChanged="Option_Changed"/>
-            <CheckBox x:Name="ChkBreath" Content="呼吸休止" FontSize="{DynamicResource FontBody}"
-                      IsChecked="False" VerticalAlignment="Center"
-                      ToolTip.Tip="长连吹时插入极短停顿，避免判定粘连"
-                      IsCheckedChanged="Breath_Changed"/>
-            <CheckBox x:Name="ChkAutoMinimize" Content="播放后自动最小化窗口" FontSize="{DynamicResource FontBody}"
+
+            <!-- 「播放后自动最小化」是演奏行为，跟着本行，不跟谱面走 -->
+            <CheckBox x:Name="ChkAutoMinimize" Content="播放后自动最小化窗口" FontSize="{DynamicResource FontSmall}"
                       IsChecked="True" VerticalAlignment="Center"
                       ToolTip.Tip="播放后窗口最小化。不勾选则保持原样（副屏看进度用，记得点一下游戏画面）"
                       IsCheckedChanged="AutoMinimize_Changed"/>
           </WrapPanel>
         </Border>
-      </StackPanel>
 
-      <Border Grid.Row="5" Classes="card" Margin="{DynamicResource CardGap}" Padding="12,9" Background="{DynamicResource BrushSurfaceAlt}">
-        <ListBox x:Name="LogList"/>
-      </Border>
+        <!-- 第 2 行：输入设置 + 播放前自检。
+             「输入兼容」原本孤零零待在左栏底部，却和这里三个热键同属「怎么把键发出去」的配置；
+             合并成一张卡后右栏少一张卡，小窗口下卷帘能多分到高度。 -->
+        <Border Classes="card" Padding="14,10">
+          <StackPanel Spacing="8">
+            <WrapPanel ItemSpacing="22" LineSpacing="8">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="输入兼容" Classes="label"
+                           ToolTip.Tip="游戏按键是按帧读取的：修饰键与音键间隔太短会被折进同一帧，导致漏音。这里给出时间余量。"/>
+                <ComboBox x:Name="TimingCombo" Width="150" FontSize="{DynamicResource FontSmall}"
+                          VerticalAlignment="Center" SelectionChanged="Timing_Changed"
+                          ToolTip.Tip="稳健=给30fps/掉帧留余量；标准=60fps 推荐；极限=高帧率下跟快歌。若仍漏音请选「稳健」。"/>
+              </StackPanel>
+
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="控制热键" Classes="label"
+                           ToolTip.Tip="一个键四用：空闲=开始，播放=暂停，暂停=继续，倒计时=取消"/>
+                <ComboBox x:Name="HotkeyControlCombo" Width="86" FontSize="{DynamicResource FontSmall}"
+                          VerticalAlignment="Center" SelectionChanged="Hotkey_Changed"
+                          ToolTip.Tip="默认 F6"/>
+              </StackPanel>
+
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="后退热键" Classes="label"
+                           ToolTip.Tip="按一下后退 5 秒。播放中跳转可能让游戏侧口琴卡音"/>
+                <ComboBox x:Name="HotkeyRewindCombo" Width="86" FontSize="{DynamicResource FontSmall}"
+                          VerticalAlignment="Center" SelectionChanged="Hotkey_Changed"
+                          ToolTip.Tip="默认 F5"/>
+              </StackPanel>
+
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="前进热键" Classes="label"
+                           ToolTip.Tip="按一下前进 5 秒。播放中跳转可能让游戏侧口琴卡音"/>
+                <ComboBox x:Name="HotkeyForwardCombo" Width="86" FontSize="{DynamicResource FontSmall}"
+                          VerticalAlignment="Center" SelectionChanged="Hotkey_Changed"
+                          ToolTip.Tip="默认 F7"/>
+              </StackPanel>
+
+              <Button x:Name="BtnExport" Content="导出按键表 ▾" FontSize="{DynamicResource FontSmall}"
+                      Padding="12,5" Classes="secondary" VerticalAlignment="Center" IsEnabled="False"
+                      ToolTip.Tip="导出按键时序，与实际演奏一致">
+                <Button.Flyout>
+                  <MenuFlyout Placement="Bottom">
+                    <MenuItem Header="罗技 G HUB 脚本 (.lua)" Click="ExportGhub_Click"/>
+                    <MenuItem Header="通用 CSV (.csv)" Click="ExportCsv_Click"/>
+                  </MenuFlyout>
+                </Button.Flyout>
+              </Button>
+            </WrapPanel>
+
+            <!-- 播放前自检：通过打勾、未通过打叉。WrapPanel 让长提示自动换行，不被卡片右边裁掉 -->
+            <Border Background="{DynamicResource BrushSurfaceAlt}" CornerRadius="8" Padding="10,7">
+              <StackPanel Spacing="4">
+                <WrapPanel ItemSpacing="16" LineSpacing="6">
+                  <TextBlock Text="播放前自检" Classes="sectionLabel" VerticalAlignment="Center"/>
+                  <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center"
+                              ToolTip.Tip="模拟按键受 Windows 的 UIPI 限制：游戏若以管理员运行而本程序不是，按键会被系统拦截">
+                    <TextBlock x:Name="TxtCheckAdminMark" Text="–" FontSize="{DynamicResource FontBody}" FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMuted}" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="TxtCheckAdmin" Text="管理员" FontSize="{DynamicResource FontSmall}" VerticalAlignment="Center"/>
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center"
+                              ToolTip.Tip="中文/日文输入法会截走按键（尤其拼音未上屏时），请切到英文">
+                    <TextBlock x:Name="TxtCheckImeMark" Text="–" FontSize="{DynamicResource FontBody}" FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMuted}" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="TxtCheckIme" Text="输入法" FontSize="{DynamicResource FontSmall}" VerticalAlignment="Center"/>
+                  </StackPanel>
+                  <Button x:Name="BtnRecheck" Content="刷新" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                          Classes="secondary" VerticalAlignment="Center" Click="BtnRecheck_Click"
+                          ToolTip.Tip="重新检测管理员权限与当前输入法（切换输入法后点一下即可）"/>
+                </WrapPanel>
+                <TextBlock x:Name="TxtCheckHint" Classes="caption" Foreground="{DynamicResource BrushWarn}"
+                           TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </Border>
+      </StackPanel>
     </Grid>
   </DockPanel>
 

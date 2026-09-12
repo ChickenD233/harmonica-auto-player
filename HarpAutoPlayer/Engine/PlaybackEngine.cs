@@ -81,8 +81,6 @@ public sealed class PlaybackEngine : IDisposable
         set => _speed = Math.Clamp(value, 0.1, 5.0);
     }
 
-    private bool _breath;            // 呼吸休止开关
-
     /// <summary>输入时序预算（物理毫秒）。播放中可改，下一轮播放生效。</summary>
     public InputTiming Timing { get; set; } = InputTiming.Standard;
 
@@ -98,7 +96,7 @@ public sealed class PlaybackEngine : IDisposable
         try
         {
             Timing = timing;
-            var (evs, _) = BuildSchedule(notes, breath: false, startMods: ModState.None);
+            var (evs, _) = BuildSchedule(notes, ModState.None);
             return evs.Select(e => (e.T, e.Kind, e.Code, e.Down)).ToArray();
         }
         finally { Timing = saved; }
@@ -121,7 +119,7 @@ public sealed class PlaybackEngine : IDisposable
     {
         var engine = new PlaybackEngine { Timing = timing ?? InputTiming.Standard };
         var inRange = notes.Where(n => n.InRange).ToList();
-        var (evs, _) = engine.BuildSchedule(inRange, breath: false, startMods: ModState.None);
+        var (evs, _) = engine.BuildSchedule(inRange, ModState.None);
 
         double safeSpeed = speed <= 0 ? 1.0 : Math.Clamp(speed, 0.1, 5.0);
         var list = new List<ScheduledEvent>(evs.Count);
@@ -141,7 +139,7 @@ public sealed class PlaybackEngine : IDisposable
     }
 
     /// <summary>开始播放。notes 为映射后 InRange 的音符（音乐时间，未乘速度）。</summary>
-    public void Play(IReadOnlyList<MappedNote> notes, double speed, double leadMs, bool loop, bool breath = false)
+    public void Play(IReadOnlyList<MappedNote> notes, double speed, double leadMs, bool loop)
     {
         lock (_gate)
         {
@@ -154,7 +152,6 @@ public sealed class PlaybackEngine : IDisposable
             double needLeadMs = Timing.ModLeadMs + Timing.FrameMs;
             _leadSec = Math.Max(Timing.LeadMs, needLeadMs) / 1000.0;
             _loop = loop;
-            _breath = breath;
             _manualStop = false;
             _loopCount = 0;
             _snapNote = "";
@@ -164,7 +161,7 @@ public sealed class PlaybackEngine : IDisposable
             _allNotes = notes.Where(n => n.InRange).ToList();
             // 构建时以"当前真实按下的修饰键"为起点：上轮中断时若还按着鼠标键，
             // 先补发松开，避免游戏侧残留升半音/八度状态。
-            (_events, _totalMusic) = BuildSchedule(_allNotes, _breath, CurrentModifiers());
+            (_events, _totalMusic) = BuildSchedule(_allNotes, CurrentModifiers());
             _snapTotal = _totalMusic;
 
             _musicNow = 0;
@@ -197,7 +194,7 @@ public sealed class PlaybackEngine : IDisposable
 
             var inRange = notes.Where(n => n.InRange).ToList();
             _allNotes = inRange;
-            var (evs, total) = BuildSchedule(inRange, _breath, startMods);
+            var (evs, total) = BuildSchedule(inRange, startMods);
             _events = evs;
             if (total > 0) _totalMusic = Math.Max(_totalMusic, total);
             _nextIdx = FindNextIdx(_musicNow);
@@ -218,7 +215,7 @@ public sealed class PlaybackEngine : IDisposable
             double target = Math.Clamp(fraction, 0, 1) * _totalMusic;
             // 从跳转点重新构建事件表：以当前（已全部松开的）修饰键状态为起点，
             // 保证跳转后的第一个音先建立正确的八度/升半音状态，音高不会错。
-            (_events, _totalMusic) = BuildSchedule(_allNotes, _breath, startMods);
+            (_events, _totalMusic) = BuildSchedule(_allNotes, startMods);
             _musicNow = target;
             _nextIdx = FindNextIdx(_musicNow);
             SetCurrentNote("");
@@ -419,6 +416,13 @@ public sealed class PlaybackEngine : IDisposable
     }
 
     /// <summary>把物理事件真正发出去，并顺带记录时序诊断（发出时的音乐时间）。</summary>
+    /// <summary>
+    /// 试听模式：整个时间轴、倒计时、速度、循环、定位都照常走，但**不真的发按键/鼠标**。
+    /// 界面改用内置 MIDI 合成器发声，于是"试听"就是放音频而不是在游戏里按键。
+    /// 状态机仍然照常更新，切换到非试听时不会有残留状态。
+    /// </summary>
+    public bool Silent { get; set; }
+
     private void Execute(PhysicalEvent ev)
     {
         switch (ev.Kind)
@@ -426,32 +430,41 @@ public sealed class PlaybackEngine : IDisposable
             case K_Key:
                 if (ev.Down)
                 {
-                    InputSender.KeyDown(ev.Code);
+                    if (!Silent) InputSender.KeyDown(ev.Code);
                     _physHeldKey = ev.Code;
                     Probe.OnNoteOn(ev.Code, ev.T);
                 }
                 else
                 {
-                    InputSender.KeyUp(ev.Code);
+                    if (!Silent) InputSender.KeyUp(ev.Code);
                     if (_physHeldKey == ev.Code) _physHeldKey = '\0';
                     Probe.OnNoteOff(ev.Code, ev.T);
                 }
                 break;
             case K_MouseLeft:
-                if (ev.Down) InputSender.MouseDown(InputSender.MouseButton.Left);
-                else InputSender.MouseUp(InputSender.MouseButton.Left);
+                if (!Silent)
+                {
+                    if (ev.Down) InputSender.MouseDown(InputSender.MouseButton.Left);
+                    else InputSender.MouseUp(InputSender.MouseButton.Left);
+                }
                 _physMods = _physMods with { L = ev.Down };
                 Probe.OnModifier(ev.T, ev.Down);
                 break;
             case K_MouseRight:
-                if (ev.Down) InputSender.MouseDown(InputSender.MouseButton.Right);
-                else InputSender.MouseUp(InputSender.MouseButton.Right);
+                if (!Silent)
+                {
+                    if (ev.Down) InputSender.MouseDown(InputSender.MouseButton.Right);
+                    else InputSender.MouseUp(InputSender.MouseButton.Right);
+                }
                 _physMods = _physMods with { R = ev.Down };
                 Probe.OnModifier(ev.T, ev.Down);
                 break;
             case K_MouseMiddle:
-                if (ev.Down) InputSender.MouseDown(InputSender.MouseButton.Middle);
-                else InputSender.MouseUp(InputSender.MouseButton.Middle);
+                if (!Silent)
+                {
+                    if (ev.Down) InputSender.MouseDown(InputSender.MouseButton.Middle);
+                    else InputSender.MouseUp(InputSender.MouseButton.Middle);
+                }
                 _physMods = _physMods with { M = ev.Down };
                 Probe.OnModifier(ev.T, ev.Down);
                 break;
@@ -503,7 +516,7 @@ public sealed class PlaybackEngine : IDisposable
     /// 按住时长 ≥ MinHoldMs；前音抬起→后音按下 ≥ ReleaseGapMs。
     /// </summary>
     private (List<PhysicalEvent>, double) BuildSchedule(
-        IReadOnlyList<MappedNote> notes, bool breath, ModState startMods)
+        IReadOnlyList<MappedNote> notes, ModState startMods)
     {
         var evs = new List<PhysicalEvent>();
         if (notes.Count == 0) return (evs, 0);
@@ -512,8 +525,6 @@ public sealed class PlaybackEngine : IDisposable
             .OrderBy(n => n.Start)
             .ThenBy(n => n.End)
             .ToList();
-
-        if (breath) ApplyBreath(ordered);
 
         double frame = Timing.FrameMs / 1000.0;
         double modLead = Math.Max(Timing.ModLeadMs / 1000.0, frame);   // 修饰键至少提前一帧
@@ -635,37 +646,5 @@ public sealed class PlaybackEngine : IDisposable
         evs = evs.OrderBy(e => e.T).ToList();
         double total = evs.Count == 0 ? 0 : evs[^1].T;
         return (evs, total);
-    }
-
-    /// <summary>呼吸休止：换气间隙至少 3 帧，否则游戏采样不到，等于没换气。</summary>
-    private void ApplyBreath(List<MappedNote> ordered)
-    {
-        double breathGap = Math.Max(0.09, Timing.MinHoldMs * 3 / 1000.0);
-        const double phraseGap = 0.18;     // 空隙超过它视为已换气
-        const double maxWind = 8.0;        // 连续吹满 8 秒触发一次
-        double delay = 0, prevEnd = -1, wind = 0;
-        for (int i = 0; i < ordered.Count; i++)
-        {
-            var n = ordered[i];
-            double gap = prevEnd < 0 ? double.MaxValue : n.Start - prevEnd;
-            double start = n.Start + delay;
-            double end = n.End + delay;
-            wind = gap < phraseGap ? wind + (end - start) : (end - start);
-            if (wind > maxWind)
-            {
-                delay += breathGap;
-                start = n.Start + delay;
-                end = n.End + delay;
-                wind = end - start;   // 重置风量
-            }
-            ordered[i] = new MappedNote
-            {
-                Pitch = n.Pitch, Start = start, End = end,
-                Key = n.Key, Sharp = n.Sharp,
-                OctaveSlot = n.OctaveSlot, InRange = n.InRange,
-                SkipReason = n.SkipReason
-            };
-            prevEnd = end;
-        }
     }
 }

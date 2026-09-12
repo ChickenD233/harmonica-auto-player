@@ -78,6 +78,21 @@ public static class MidiLoader
         }
         var tempoMap = file.GetTempoMap();
 
+        // 卷帘标尺画小节线用：取文件第一处速度与拍号。带变速/变拍的曲子会有偏差，
+        // 这里只做视觉网格，不参与任何时序计算。
+        double secPerBeat = 0.5;
+        int beatsPerBar = 4;
+        try
+        {
+            var tempoChange = tempoMap.GetTempoChanges().FirstOrDefault();
+            if (tempoChange != null && tempoChange.Value.BeatsPerMinute > 1)
+                secPerBeat = 60.0 / tempoChange.Value.BeatsPerMinute;
+            var tsChange = tempoMap.GetTimeSignatureChanges().FirstOrDefault();
+            if (tsChange != null && tsChange.Value.Numerator >= 1)
+                beatsPerBar = tsChange.Value.Numerator;
+        }
+        catch { /* 元事件异常时用 120bpm 4/4 */ }
+
         string divisionLabel;
         switch (file.TimeDivision)
         {
@@ -143,6 +158,8 @@ public static class MidiLoader
             FilePath = path,
             DivisionLabel = divisionLabel,
             DurationSec = fileEndSec,
+            SecondsPerBeat = secPerBeat,
+            BeatsPerBar = beatsPerBar,
             Candidates = candidates
         };
     }

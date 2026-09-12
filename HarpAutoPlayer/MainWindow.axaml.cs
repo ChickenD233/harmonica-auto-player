@@ -17,7 +17,6 @@ namespace HarpAutoPlayer;
 public partial class MainWindow : Window
 {
     private readonly ObservableCollection<TrackRowVM> _tracks = new();
-    private readonly ObservableCollection<string> _log = new();
     private readonly List<TrackRowVM> _mixOrder = new();   // 勾选合奏的顺序 = 主次（先勾=主）
 
     private ParsedMidi? _parsed;
@@ -34,6 +33,10 @@ public partial class MainWindow : Window
     private bool _seeking;          // 用户正在拖进度条
     private List<MappedNote> _previewNotes = new();   // 全量音符（含超音域），供卷帘与定位使用
     private double _previewSeconds;                   // 未播放时的定位秒数
+    private int _noteCount;                           // 当前谱面音符数（避免每次点击都重算）
+    private readonly ScoreEditor _editor = new();     // 手动编辑后的谱面
+    private bool _editing;                            // true = 用编辑结果，不再用自动提取
+    private bool _helpOn;                             // 卷帘右侧操作说明：默认收起，保持界面干净
     private bool _liveQueued;       // 已排队待应用的实时移调
     private IntPtr _gameHwnd;       // 播放期间记住的游戏窗口（用于停止时把焦点还给它）
     private double _removedLeadSec; // “去除开头空拍”实际剪掉的秒数（本轮）
@@ -54,7 +57,6 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         TrackList.ItemsSource = _tracks;
-        LogList.ItemsSource = _log;
 
         // 倒计时下拉：0/3/5/10 秒，默认 3 秒
         CountdownCombo.ItemsSource = new List<string> { "0秒(立即)", "3秒", "5秒", "10秒" };
@@ -83,9 +85,6 @@ public partial class MainWindow : Window
         HotkeyForwardCombo.SelectedIndex = Math.Clamp(_cfg.ForwardHotkeyIndex, 0, 12);
         SliderSpeed.Value = Math.Clamp(_cfg.Speed, 50, 200);
         SliderTranspose.Value = Math.Clamp(_cfg.Transpose, -10, 10);
-        ChkChordRoot.IsChecked = _cfg.ChordRoot;
-        ChkBreath.IsChecked = _cfg.Breath;
-        ChkVocalExtract.IsChecked = _cfg.VocalExtract;
         ChkTrimLead.IsChecked = _cfg.TrimLead;
         ChkAutoMinimize.IsChecked = _cfg.AutoMinimizeOnPlay;
         TimingCombo.SelectedIndex = Math.Clamp(_cfg.TimingIndex, 0, 2);
@@ -115,6 +114,16 @@ public partial class MainWindow : Window
 
         Roll.SeekPreview += OnRollPreview;
         Roll.SeekCommitted += OnRollSeek;
+        Roll.SelectionChanged += UpdateEditUi;
+        Roll.EditCommitted += OnRollEditCommitted;
+        Roll.ViewChanged += OnRollViewChanged;
+        ChkSnap.IsCheckedChanged += (_, _) => Roll.SnapEnabled = ChkSnap.IsChecked == true;
+        ChkFollow.IsCheckedChanged += (_, _) => Roll.SetFollow(ChkFollow.IsChecked == true);
+        KeyDown += OnWindowKeyDown;
+        Roll.SnapEnabled = ChkSnap.IsChecked == true;
+        Roll.SetFollow(ChkFollow.IsChecked == true);
+        if (RollHelp != null) UpdateHelpVisibility();
+        SizeChanged += (_, _) => UpdateHelpVisibility();
 
         _previewDeb = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
         _previewDeb.Tick += (_, _) =>
@@ -283,6 +292,8 @@ public partial class MainWindow : Window
     private void UpdateTransportUi()
     {
         var eng = _engine;
+        // 播放头跟随只在播放中生效，这里统一告知卷帘
+        if (Roll != null) Roll.IsPlaying = eng is { IsRunning: true };
         if (eng is { IsRunning: true })
         {
             BtnPlay.IsEnabled = true;
@@ -304,9 +315,8 @@ public partial class MainWindow : Window
     private void InsertLog(string msg)
     {
         string line = $"[{DateTime.Now:HH:mm:ss}] {msg}";
-        _log.Insert(0, line);
-        while (_log.Count > 400) _log.RemoveAt(_log.Count - 1);
-        Persist.LogFile.Append(line);   // 落盘
+        if (TxtLastMsg != null) TxtLastMsg.Text = msg;   // 界面只留最近一条
+        Persist.LogFile.Append(line);                    // 完整历史仍然落盘
     }
 
     private void ScheduleSave()
@@ -324,9 +334,6 @@ public partial class MainWindow : Window
         _cfg.ControlHotkeyIndex = Math.Clamp(HotkeyControlCombo.SelectedIndex, 0, 12);
         _cfg.RewindHotkeyIndex = Math.Clamp(HotkeyRewindCombo.SelectedIndex, 0, 12);
         _cfg.ForwardHotkeyIndex = Math.Clamp(HotkeyForwardCombo.SelectedIndex, 0, 12);
-        _cfg.ChordRoot = ChkChordRoot.IsChecked == true;
-        _cfg.Breath = ChkBreath.IsChecked == true;
-        _cfg.VocalExtract = ChkVocalExtract.IsChecked == true;
         _cfg.TrimLead = ChkTrimLead.IsChecked == true;
         _cfg.AutoMinimizeOnPlay = ChkAutoMinimize.IsChecked == true;
         _cfg.TimingIndex = Math.Clamp(TimingCombo.SelectedIndex, 0, 2);
@@ -447,9 +454,16 @@ public partial class MainWindow : Window
         ApplySeek(seconds);
     }
 
-    /// <summary>定位到某个秒数：播放中跳转，未播放只记住位置。</summary>
+    /// <summary>定位到某个秒数：试听中跳转试听，演奏中跳转引擎，都没有只记住位置。</summary>
     private void ApplySeek(double seconds)
     {
+        if (_previewOn)
+        {
+            PreviewSeekTo(seconds);
+            ShowPosition(seconds);
+            return;
+        }
+
         var eng = _engine;
         if (eng is { IsRunning: true })
         {
@@ -466,11 +480,12 @@ public partial class MainWindow : Window
     private double PreviewTotalSeconds =>
         _previewNotes.Count == 0 ? 0 : _previewNotes.Max(n => n.End);
 
-    /// <summary>把进度条、卷帘、时间与音符一起摆到某个秒数（不动引擎）。</summary>
+    /// <summary>进度条/卷帘/时间/定位音一起摆到某个秒数（不动引擎，也不动试听时钟）。</summary>
     private void ShowPosition(double seconds)
     {
-        var eng = _engine;
-        double total = eng is { IsRunning: true } ? Math.Max(0.001, eng.TotalSeconds) : PreviewTotalSeconds;
+        double total = _previewOn
+            ? _previewTotal
+            : (_engine is { IsRunning: true } ? Math.Max(0.001, _engine.TotalSeconds) : PreviewTotalSeconds);
         double t = Math.Clamp(seconds, 0, total);
         SliderProgress.Value = t;
         Roll.SetPosition(t);
@@ -497,10 +512,371 @@ public partial class MainWindow : Window
         TxtSeekNote.Text = $"{name} {Music.DegreeName(note.Pitch)} · {mods}{note.Key}";
     }
 
+    // ================= 卷帘编辑 =================
+
+    /// <summary>谱面来源要变了：有手动改动就先丢弃并说明，否则用户会以为点了没反应。</summary>
+    private void DropEditsIfAny(string why)
+    {
+        if (!_editing) return;
+        ResetEdits();
+        InsertLog($"已丢弃手动改动（{why}）。");
+    }
+
+    /// <summary>第一次编辑时，把当前自动结果冻结成可编辑谱面。</summary>
+    private void BeginEditIfNeeded()
+    {
+        if (_editing) return;
+        _editor.Reset(ComputeAutoNotes());
+        _editing = true;
+        InsertLog("已进入编辑模式：自动提取的选项不再影响谱面，点「还原为自动」可退出。");
+    }
+
+    /// <summary>换歌或点「还原为自动」时丢弃全部手动改动。</summary>
+    private void ResetEdits()
+    {
+        _editing = false;
+        _editor.Clear();
+        Roll.ClearSelection();
+    }
+
+    /// <summary>
+    /// 卷帘完成一次编辑手势，提交的是**整条新谱面**（而不是单个音的增量）。
+    /// 这样拖动一组音在撤销栈里只算一步；卷帘自己已经持有这份数据，
+    /// 所以这里不再把音符推回给它（推回去会重置视口与选择）。
+    /// </summary>
+    private void OnRollEditCommitted(IReadOnlyList<RawNote> notes, string what)
+    {
+        BeginEditIfNeeded();
+        _editor.ReplaceAll(notes);
+        RefreshPreview(pushToRoll: false);
+        InsertLog($"已{what}。");
+    }
+
+    /// <summary>卷帘视口/缩放/跟随变化：刷新工具栏读数。</summary>
+    private void OnRollViewChanged()
+    {
+        if (TxtZoom == null) return;
+        TxtZoom.Text = $"{Roll.ZoomPercent:F0}%";
+        if (ChkFollow != null && ChkFollow.IsChecked != Roll.FollowPlayhead)
+            ChkFollow.IsChecked = Roll.FollowPlayhead;
+    }
+
+    /// <summary>加音用的默认长度：取现有音符的中位长度，夹在 0.1-1.0 秒。</summary>
+    private double MedianNoteLength()
+    {
+        var src = _editing ? _editor.Notes : ComputeAutoNotes();
+        var lens = src.Select(n => n.End - n.Start).Where(l => l > 0.02).OrderBy(l => l).ToList();
+        if (lens.Count == 0) return 0.25;
+        return Math.Clamp(lens[lens.Count / 2], 0.1, 1.0);
+    }
+
+    private void DoUndo()
+    {
+        if (!_editing || !_editor.Undo()) { InsertLog("没有可撤销的操作。"); return; }
+        RefreshPreview(keepView: true);
+        Roll.ClearSelection();
+        InsertLog("已撤销。");
+    }
+
+    private void DoRedo()
+    {
+        if (!_editing || !_editor.Redo()) { InsertLog("没有可重做的操作。"); return; }
+        RefreshPreview(keepView: true);
+        Roll.ClearSelection();
+        InsertLog("已重做。");
+    }
+
+    /// <summary>删除卷帘里选中的音（工具栏按钮 / Delete 键）。</summary>
+    private void DeleteSelectedNote()
+    {
+        if (!Roll.HasSelection) { InsertLog("先在卷帘上点一个音（或框选几个），再删除。"); return; }
+        Roll.DeleteSelected();
+    }
+
+    private void UpdateEditUi()
+    {
+        if (BtnUndo == null) return;
+        BtnUndo.IsEnabled = _editing && _editor.CanUndo;
+        BtnRedo.IsEnabled = _editing && _editor.CanRedo;
+        BtnDeleteNote.IsEnabled = Roll.HasSelection;
+        BtnResetEdits.IsEnabled = _editing;
+        BtnExportMidi.IsEnabled = _noteCount > 0;
+    }
+
+    private void Undo_Click(object? sender, RoutedEventArgs e) => DoUndo();
+    private void ZoomIn_Click(object? sender, RoutedEventArgs e) => Roll.ZoomCenter(0.6);
+    private void ZoomOut_Click(object? sender, RoutedEventArgs e) => Roll.ZoomCenter(1.67);
+    private void ZoomFit_Click(object? sender, RoutedEventArgs e) => Roll.FitAll();
+    private void Redo_Click(object? sender, RoutedEventArgs e) => DoRedo();
+    private void DeleteNote_Click(object? sender, RoutedEventArgs e) => DeleteSelectedNote();
+
+    private void Snap_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (Roll != null) Roll.SnapEnabled = ChkSnap.IsChecked == true;
+    }
+
+    /// <summary>帮助按钮：显示 / 收起卷帘右侧的操作说明。</summary>
+    private void Help_Click(object? sender, RoutedEventArgs e)
+    {
+        _helpOn = !_helpOn;
+        UpdateHelpVisibility();
+    }
+
+    /// <summary>
+    /// 说明栏占 188px。窗口太窄时，右栏减去它就不够放卷帘工具栏，缩放按钮会被挤掉 ——
+    /// 所以按窗口宽度自动收起，拉宽后自动恢复。
+    /// </summary>
+    private void UpdateHelpVisibility()
+    {
+        if (RollHelp == null) return;
+        bool roomy = Bounds.Width >= 1080;
+        RollHelp.IsVisible = _helpOn && roomy;
+        if (BtnHelp != null)
+        {
+            BtnHelp.IsEnabled = roomy;
+            ToolTip.SetTip(BtnHelp, roomy
+                ? (_helpOn ? "收起操作说明，把宽度让给卷帘" : "显示操作说明")
+                : "窗口太窄：说明已自动收起，避免把缩放按钮挤掉。把窗口拉宽就会恢复。");
+        }
+    }
+
+    // ================= 内置试听 =================
+    //
+    // 试听是一个**独立按钮**，和演奏完全无关：不发按键、不走倒计时、不最小化窗口。
+    // 关键在于它是"事件调度"而不是"按固定间隔采样"：
+    // 播放前先把每个音的 note-on / note-off 时刻排成一张表（按真实秒），
+    // 定时器每次醒来把**所有到点的**事件一次发完。这样即使定时器被 UI 卡住、
+    // 或者某个音短于定时器间隔，也不会被漏掉 —— 采样式实现会成片吞音。
+
+    private MidiPreview? _preview;
+    private DispatcherTimer? _previewTimer;
+    private readonly List<(double T, int Pitch, bool Down)> _previewEvents = new();
+    /// <summary>每个音在"真实秒"下的起止，用于跳转时判断"跳进了哪个音的中间"。</summary>
+    private readonly List<(double S, double E, int Pitch)> _previewSpans = new();
+    private double _previewTotal;
+    private int _previewNext;
+    /// <summary>试听位置的时间基准：位置 = (现在 - 基准) / 频率。跳转只需挪这个基准。</summary>
+    private long _previewBaseTicks;
+    private bool _previewOn;
+    private readonly HashSet<int> _previewSounding = new();
+
+    /// <summary>试听当前所在秒数（真实秒，已含速度）。</summary>
+    private double PreviewNow() =>
+        (System.Diagnostics.Stopwatch.GetTimestamp() - _previewBaseTicks)
+        / (double)System.Diagnostics.Stopwatch.Frequency;
+
+    /// <summary>
+    /// 试听中跳转到某个秒数：挪时间基准、放开所有在响的音、把事件游标移到该点之后，
+    /// 并且把"跳进去的那个音"补上（否则从音符中间跳过去这段就是哑的）。
+    /// </summary>
+    private void PreviewSeekTo(double seconds)
+    {
+        double t = Math.Clamp(seconds, 0, _previewTotal);
+        _previewBaseTicks = System.Diagnostics.Stopwatch.GetTimestamp()
+                            - (long)(t * System.Diagnostics.Stopwatch.Frequency);
+
+        _preview?.StopAll();
+        _previewSounding.Clear();
+
+        _previewNext = 0;
+        while (_previewNext < _previewEvents.Count && _previewEvents[_previewNext].T < t) _previewNext++;
+
+        if (_preview != null)
+        {
+            foreach (var s in _previewSpans)
+            {
+                if (s.S <= t && t < s.E)
+                {
+                    _preview.PlayNote(s.Pitch, velocity: 96, autoRelease: false);
+                    _previewSounding.Add(s.Pitch);
+                }
+            }
+        }
+    }
+
+    /// <summary>试听按钮：点一下开始放声音，再点一下停止。</summary>
+    private void Preview_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_previewOn) StopPreviewAudio();
+        else StartPreviewAudio();
+    }
+
+    private void StartPreviewAudio()
+    {
+        // 不能用 _playNotes：那个只在"开始播放"时才填。用户刚打开文件就点试听时它是空的。
+        if (_busy || _engine is { IsRunning: true })
+        {
+            InsertLog("试听与演奏不能同时进行，先停止当前演奏。");
+            return;
+        }
+        var notes = BuildMapping().Notes.Where(n => n.InRange).ToList();
+        if (notes.Count == 0)
+        {
+            InsertLog("当前谱面没有可演奏的音，无法试听。先选一行主旋律。");
+            return;
+        }
+
+        if (_preview == null)
+        {
+            _preview = new MidiPreview();
+            if (!_preview.IsAvailable)
+            {
+                InsertLog($"试听不可用：{_preview.LastError}。" +
+                          "系统可能没有可用的 MIDI 输出设备（正常应有 Microsoft GS Wavetable Synth）。");
+                _preview.Dispose();
+                _preview = null;
+                BtnPreview.IsEnabled = false;
+                return;
+            }
+        }
+
+        // 与演奏同一套时间基准：谱面时间除以速度 = 真实秒
+        double speed = Math.Max(0.1, SliderSpeed.Value / 100.0);
+        const double gap = 0.02;   // 同音高重复时留出断开，否则不会重新触发
+        _previewEvents.Clear();
+        _previewSpans.Clear();
+        foreach (var n in notes)
+        {
+            double s = n.Start / speed;
+            double e = n.End / speed;
+            double off = Math.Max(s + 0.03, e - gap);
+            _previewEvents.Add((s, n.Pitch, true));
+            _previewEvents.Add((off, n.Pitch, false));
+            _previewSpans.Add((s, off, n.Pitch));
+        }
+        _previewEvents.Sort((a, b) => a.T.CompareTo(b.T));
+
+        _previewNext = 0;
+        _previewSounding.Clear();
+        _previewTotal = _previewEvents.Count == 0 ? 0 : _previewEvents[^1].T;
+        // 从进度条当前位置开始试听（用户可能已经把指针拖到某处了）
+        double startAt = Math.Clamp(SliderProgress.Value, 0, _previewTotal);
+        _previewBaseTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        _previewOn = true;
+        BtnPreview.Content = "⏹ 停止试听";
+        SliderProgress.Maximum = Math.Max(0.1, _previewTotal);
+        PreviewSeekTo(startAt);
+
+        _previewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(15) };
+        _previewTimer.Tick += (_, _) => PreviewTick();
+        _previewTimer.Start();
+
+        InsertLog($"试听开始：{notes.Count} 个音，约 {_previewTotal:F1}s（不发送按键）");
+    }
+
+    private void PreviewTick()
+    {
+        if (!_previewOn || _preview == null) return;
+
+        // 用户正在拖进度条/卷帘：这一帧不推进也不覆盖，把画面交给拖动
+        if (_seeking) return;
+
+        double t = PreviewNow();
+
+        // 一次补齐所有到点的事件（不是只看"当前这一刻"，所以不会漏音）
+        while (_previewNext < _previewEvents.Count && _previewEvents[_previewNext].T <= t)
+        {
+            var e = _previewEvents[_previewNext++];
+            if (e.Down)
+            {
+                _preview.PlayNote(e.Pitch, velocity: 96, autoRelease: false);
+                _previewSounding.Add(e.Pitch);
+            }
+            else
+            {
+                _preview.StopNote(e.Pitch);
+                _previewSounding.Remove(e.Pitch);
+            }
+        }
+
+        double shown = Math.Min(t, _previewTotal);
+        if (_previewTotal > 0)
+        {
+            SliderProgress.Value = shown;
+            TxtTime.Text = $"{shown:F1} / {_previewTotal:F1} s";
+            Roll.SetPosition(shown);
+            UpdateSeekNote(shown);
+        }
+
+        if (_previewNext >= _previewEvents.Count) StopPreviewAudio();
+    }
+
+    /// <summary>停止试听：放掉所有正在响的音，恢复按钮文字。</summary>
+    private void StopPreviewAudio()
+    {
+        if (!_previewOn && _previewTimer == null) return;
+        _previewOn = false;
+        _previewTimer?.Stop();
+        _previewTimer = null;
+        _previewSounding.Clear();
+        _preview?.StopAll();
+        if (BtnPreview != null) BtnPreview.Content = "试听";
+    }
+
+    private void ResetEdits_Click(object? sender, RoutedEventArgs e)
+    {
+        if (!_editing) { InsertLog("当前就是自动结果，没有可还原的改动。"); return; }
+        ResetEdits();
+        RefreshPreview();
+        InsertLog("已还原为自动提取结果。");
+    }
+
+    /// <summary>窗口级快捷键：删除、撤销、重做。卷帘不必先获得焦点。</summary>
+    private void OnWindowKeyDown(object? sender, KeyEventArgs e)
+    {
+        bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+        if (ctrl && e.Key == Key.Z)
+        {
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) DoRedo(); else DoUndo();
+            e.Handled = true;
+            return;
+        }
+        if (ctrl && e.Key == Key.Y) { DoRedo(); e.Handled = true; return; }
+        if (e.Key == Key.Delete) { DeleteSelectedNote(); e.Handled = true; }
+    }
+
+    /// <summary>把当前谱面写成标准 MIDI 文件。</summary>
+    private async void ExportMidi_Click(object? sender, RoutedEventArgs e)
+    {
+        var raw = GetActiveRawNotes();
+        if (raw.Count == 0) { InsertLog("没有音符可导出。"); return; }
+        try
+        {
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "导出编辑后的 MIDI",
+                SuggestedFileName = SuggestMidiName(),
+                DefaultExtension = "mid",
+                FileTypeChoices = new List<FilePickerFileType>
+                {
+                    new("MIDI 文件") { Patterns = new List<string> { "*.mid" } }
+                }
+            });
+            if (file == null) return;
+            string? path = file.TryGetLocalPath();
+            if (string.IsNullOrEmpty(path)) return;
+
+            MidiExporter.Write(path, raw, "HarpAutoPlayer 编辑");
+            InsertLog($"已导出 MIDI：{raw.Count} 个音 → {System.IO.Path.GetFileName(path)}");
+        }
+        catch (Exception ex)
+        {
+            InsertLog($"导出 MIDI 失败：{ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private string SuggestMidiName()
+    {
+        string name = "edited";
+        if (_parsed != null && !string.IsNullOrEmpty(_parsed.FilePath))
+            name = System.IO.Path.GetFileNameWithoutExtension(_parsed.FilePath) + "-edited";
+        return name + ".mid";
+    }
+
     /// <summary>没有可定位的谱面时，清空进度条、卷帘与音符显示。</summary>
     private void ResetSeekUi()
     {
-        Roll.SetNotes(_previewNotes, 0);
+        Roll.SetNotes(Array.Empty<RawNote>(), Array.Empty<int>(), 0);
         Roll.SetPosition(0);
         SliderProgress.Maximum = 0.1;
         SliderProgress.Value = 0;
@@ -548,6 +924,9 @@ public partial class MainWindow : Window
                 InsertLog($"已载入 {System.IO.Path.GetFileName(path)}：{parsed.Candidates.Count} 个候选，时长 ≈ {parsed.DurationSec:F1}s");
 
                 _selected = null;
+                _previewSeconds = 0;      // 换歌必须回到 0，否则上一首的位置会夹到新曲末尾 → 一播放就结束
+                Roll.FitAll();
+                ResetEdits();
                 ChooseRecommendedTrack();
                 RefreshPreview();
             }
@@ -607,6 +986,13 @@ public partial class MainWindow : Window
             InsertLog($"已自动选中推荐轨：{best.DisplayName}（想换就点其它行）");
         else
             InsertLog($"已自动选中较合适的轨：{best.DisplayName}（音域贴合不多，可用「一键移调」）");
+
+        // 覆盖不全就明说：进度条与卷帘只覆盖这一段，免得用户以为「加载不全」
+        double span = best.Candidate.Notes.Count == 0 ? 0 : best.Candidate.Notes.Max(n => n.End);
+        double fileSec = _parsed?.DurationSec ?? 0;
+        if (fileSec > 5 && span < fileSec * 0.6)
+            InsertLog($"注意：这条轨只到 {span:F1}s，全曲 {fileSec:F1}s。" +
+                      $"进度条与卷帘只覆盖这一段，可在左侧点其它行换轨。");
     }
 
     private double ScoreCandidate(TrackRowVM r)
@@ -646,6 +1032,16 @@ public partial class MainWindow : Window
             s += 30.0 * map.InRangeCount / notes.Count;   // 音域贴合度（不抢先于名字线索）
             if (notes.Count < 8) s -= 20;                  // 太碎不像是能吹的歌
             s += Math.Min(notes.Count / 50.0, 8.0);        // 稍偏好完整曲目轨
+
+            // 覆盖时长：只盖住开头几秒的轨（前奏、过门、演示音）不该压过整首主旋律。
+            // 用「最后一个音的结束时刻」而不是跨度，这样后半段才进旋律的轨也能得高分。
+            double fileSec = _parsed?.DurationSec ?? 0;
+            if (fileSec > 1)
+            {
+                double cover = Math.Clamp(notes.Max(n => n.End) / fileSec, 0, 1);
+                s += 60.0 * cover * cover;
+                if (cover < 0.25) s -= 25;
+            }
         }
         return s;
     }
@@ -658,6 +1054,7 @@ public partial class MainWindow : Window
     private void SetMain(TrackRowVM? row)
     {
         if (row == null) return;
+        DropEditsIfAny("换了主旋律轨");
         foreach (var r in _tracks) r.IsMain = ReferenceEquals(r, row);
         _selected = row;
         RefreshPreview();
@@ -675,8 +1072,16 @@ public partial class MainWindow : Window
         return _selected != null ? new List<TrackRowVM> { _selected } : new List<TrackRowVM>();
     }
 
-    /// <summary>把当前要演奏的音符（含合奏/和弦取根）合并成一条线（未移调）。</summary>
-    private List<RawNote> GetActiveRawNotes()
+    /// <summary>当前谱面：手动编辑过就用编辑结果，否则用自动提取结果。</summary>
+    private List<RawNote> GetActiveRawNotes() =>
+        _editing ? _editor.Notes.ToList() : ComputeAutoNotes();
+
+    /// <summary>
+    /// 当前要演奏的音符（未移调）：把勾选的声部按优先级合并成一条单音线。
+    /// 「自动提取主旋律 / 人声旋律提取」已移除 —— 它们是黑盒猜测，猜错时用户无从下手；
+    /// 现在卷帘可以直接看、直接改，比猜得准。
+    /// </summary>
+    private List<RawNote> ComputeAutoNotes()
     {
         var rows = ActiveRows();
         if (rows.Count == 0)
@@ -686,17 +1091,10 @@ public partial class MainWindow : Window
         }
         var voices = new List<(int Rank, RawNote Note)>();
         for (int k = 0; k < rows.Count; k++)
-        {
-            var rowNotes = rows[k].Candidate.Notes;
-            if (ChkVocalExtract.IsChecked == true)
-                rowNotes = NoteMapper.ExtractVocalMelody(rowNotes);   // 人声旋律提取（伴奏混同轨）
-            else if (ChkChordRoot.IsChecked == true)
-                rowNotes = MelodyExtractor.Extract(rowNotes);          // 自动提取主旋律（分声部 + 自动择一）
-            foreach (var n in rowNotes) voices.Add((k + 1, n));  // 1 最优先
-        }
+            foreach (var n in rows[k].Candidate.Notes) voices.Add((k + 1, n));  // 1 最优先
         var merged = NoteMapper.MergeVoicesByPriority(voices);
 
-        // “去除开头空拍”：整条旋律平移到第一个音从 0 秒开始（开头常有休止）
+        // 「去除开头空拍」：整条旋律平移到第一个音从 0 秒开始（开头常有休止）
         if (ChkTrimLead.IsChecked == true)
         {
             double before = merged.Count == 0 ? 0 : merged.Min(n => n.Start);
@@ -813,6 +1211,7 @@ public partial class MainWindow : Window
     {
         if (sender is CheckBox cb && cb.DataContext is TrackRowVM row)
         {
+            DropEditsIfAny("改了合奏声部");
             bool on = cb.IsChecked == true;
             row.IsMix = on;   // 保证模型状态一致
             if (on)
@@ -844,11 +1243,6 @@ public partial class MainWindow : Window
         if (_busy || _previewDeb is null) return;
         _previewDeb.Stop();
         _previewDeb.Start();
-    }
-
-    private void Breath_Changed(object? sender, RoutedEventArgs e)
-    {
-        ScheduleSave();
     }
 
     // ================= 播放前自检 =================
@@ -982,7 +1376,15 @@ public partial class MainWindow : Window
     }
 
     /// <summary>刷新旋律预览与提示文案（载入文件、切换声轨、改选项后调用）。</summary>
-    private void RefreshPreview()
+    /// <param name="pushToRoll">
+    /// true = 把谱面推回卷帘（换歌/换轨/改选项，会重置它的视口与选择）；
+    /// false = 卷帘自己刚提交的编辑，数据已在它手里，不要再推回去。
+    /// </param>
+    /// <param name="keepView">
+    /// 推回谱面时是否保留卷帘当前的缩放与位置。撤销/重做必须为 true ——
+    /// 否则用户放大到某一段改谱，一按 Ctrl+Z 就被弹回全曲，没法连续编辑。
+    /// </param>
+    private void RefreshPreview(bool pushToRoll = true, bool keepView = false)
     {
         UpdateActionButtons();
 
@@ -1003,23 +1405,45 @@ public partial class MainWindow : Window
             _previewNotes = new List<MappedNote>();
             _previewSeconds = 0;
             ResetSeekUi();
+            UpdateEditUi();
             UpdateTransportUi();
             return;
         }
 
-        var m = BuildMapping();
+        var raw = GetActiveRawNotes();
+        var m = raw.Count == 0 ? new MappingResult() : NoteMapper.Map(raw, CurrentTranspose, null);
 
         // 载入后即可定位：进度条与卷帘按谱面时间摆好（不必先播放）
         _previewNotes = m.Notes;
         double totalSec = PreviewTotalSeconds;
         _previewSeconds = Math.Clamp(_previewSeconds, 0, totalSec);
-        Roll.SetNotes(m.Notes, totalSec);
-        Roll.SetPosition(_previewSeconds);
+        // 卷帘轴上留 2% 余量，末尾才好双击加音
+        _noteCount = raw.Count;
+        // 绿=可演奏、灰=超出音域，由这份音高集合决定。
+        // 两条分支都必须更新它：编辑路径不经过 SetNotes，否则改完音高颜色会按旧集合算。
+        var inRangePitches = m.Notes.Where(n => n.InRange).Select(n => n.Pitch).Distinct().ToList();
+        if (pushToRoll)
+        {
+            Roll.SetTempo(_parsed.SecondsPerBeat, _parsed.BeatsPerBar);
+            Roll.DefaultNoteSeconds = MedianNoteLength();
+            Roll.SetNotes(raw, inRangePitches, totalSec * 1.02 + 0.3, preserveView: keepView);
+            Roll.SetTrimInfo(_removedLeadSec);
+            Roll.SetPosition(_previewSeconds);
+            OnRollViewChanged();
+        }
+        else
+        {
+            // 编辑提交：只同步进度条、音高颜色与读数，卷帘保持自己的视口与选择
+            Roll.SetInRangePitches(inRangePitches);
+            SliderProgress.IsEnabled = m.Notes.Count > 0;
+            UpdateSeekNote();
+        }
         SliderProgress.Maximum = Math.Max(0.1, totalSec);
         SliderProgress.Value = _previewSeconds;
         SliderProgress.IsEnabled = m.Notes.Count > 0;
         TxtTime.Text = $"{_previewSeconds:F1} / {totalSec:F1} s";
         UpdateSeekNote();
+        UpdateEditUi();
 
         if (rows.Count > 1)
         {
@@ -1155,9 +1579,8 @@ public partial class MainWindow : Window
         double startFrac = SliderProgress.Maximum > 0
             ? Math.Clamp(SliderProgress.Value / SliderProgress.Maximum, 0, 1) : 0;
         _gameHwnd = IntPtr.Zero;   // 新一轮播放重新记忆游戏窗口
-        bool breath = ChkBreath.IsChecked == true;
         engine.Timing = InputTiming.FromIndex(TimingCombo.SelectedIndex);
-        engine.Play(_playNotes, speed, FixedLeadMs, loop, breath);
+        engine.Play(_playNotes, speed, FixedLeadMs, loop);
         SliderProgress.Maximum = Math.Max(0.1, engine.TotalSeconds);
         if (startFrac > 0.0005)
         {
@@ -1243,6 +1666,7 @@ public partial class MainWindow : Window
         var eng = _engine;
         _engine = null;
         eng?.Stop();
+        StopPreviewAudio();
 
         _uiTimer?.Stop();
         _uiTimer = null;
@@ -1281,11 +1705,9 @@ public partial class MainWindow : Window
         BtnOpen.IsEnabled = !busy || (_engine is { IsRunning: true, IsPaused: true });
         TrackList.IsEnabled = !busy;
         ChkLoop.IsEnabled = !busy;
-        ChkChordRoot.IsEnabled = !busy;
-        ChkBreath.IsEnabled = !busy;
-        ChkVocalExtract.IsEnabled = !busy;
         ChkTrimLead.IsEnabled = !busy;
         ChkAutoMinimize.IsEnabled = !busy;
+        BtnPreview.IsEnabled = !busy;
         CountdownCombo.IsEnabled = !busy;
         // 一键移调 / 导出的可用性统一由 UpdateActionButtons() 决定，这里不再覆盖。
         UpdateActionButtons();
@@ -1391,6 +1813,9 @@ public partial class MainWindow : Window
         _liveTimer?.Stop();
         _uiTimer?.Stop();
         _engine?.Stop();
+        StopPreviewAudio();
+        _preview?.Dispose();
+        _preview = null;
         Input.GlobalHotkeys.Stop();
         _tray?.Dispose();
         _tray = null;

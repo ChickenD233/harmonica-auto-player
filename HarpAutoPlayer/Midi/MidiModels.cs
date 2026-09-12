@@ -36,6 +36,10 @@ public sealed class ParsedMidi
     public string FilePath { get; init; } = "";
     public string DivisionLabel { get; init; } = "";
     public double DurationSec { get; init; }
+    /// <summary>拍长（秒），取文件第一处速度；卷帘标尺用它画小节线。</summary>
+    public double SecondsPerBeat { get; init; } = 0.5;
+    /// <summary>每小节拍数，取文件第一处拍号。</summary>
+    public int BeatsPerBar { get; init; } = 4;
     public List<MidiCandidate> Candidates { get; init; } = new();
 }
 

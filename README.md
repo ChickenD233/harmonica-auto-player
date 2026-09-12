@@ -9,7 +9,7 @@
 
 ## 下载
 
-1. 打开右侧 **Releases**，下载 `HarpAutoPlayer-win-x64.zip`（当前 **v1.0.10**）
+1. 打开右侧 **Releases**，下载 `HarpAutoPlayer-win-x64.zip`（当前 **v1.1.0**）
 2. 解压后双击 `HarpAutoPlayer.exe`，会弹 UAC，选「是」
 3. 若弹 SmartScreen「未知发布者」：更多信息 → 仍要运行
 4. 杀毒软件可能误报「模拟按键」，请加白名单

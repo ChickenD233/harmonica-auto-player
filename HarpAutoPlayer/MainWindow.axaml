@@ -210,11 +210,14 @@
           </StackPanel>
           <TextBlock x:Name="TxtCheckHint" FontSize="12" Foreground="#B25A00"
                      VerticalAlignment="Center"/>
+          <Button x:Name="BtnRecheck" Content="刷新" FontSize="11.5" Padding="8,2"
+                  VerticalAlignment="Center" Click="BtnRecheck_Click"
+                  ToolTip.Tip="重新检测管理员权限与当前输入法（切换输入法后点一下即可）"/>
         </StackPanel>
       </Border>
 
       <!-- 选项区：三行分组，避免一个 WrapPanel 里堆十几个控件 -->
-      <StackPanel Grid.Row="5" Spacing="8" Margin="0,10,0,0">
+      <StackPanel Grid.Row="3" Spacing="8" Margin="0,10,0,0">
 
         <!-- 第 1 行：演奏参数 -->
         <Border Classes="card" Padding="12,8">
@@ -309,7 +312,7 @@
         </Border>
       </StackPanel>
 
-      <Border Grid.Row="6" Classes="card" Margin="0,10,0,0" Padding="10,8" Background="#FAFBFC">
+      <Border Grid.Row="5" Classes="card" Margin="0,10,0,0" Padding="10,8" Background="#FAFBFC">
         <ListBox x:Name="LogList" FontSize="12" Foreground="#555" Background="Transparent"/>
       </Border>
     </Grid>

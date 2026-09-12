@@ -781,6 +781,13 @@ public partial class MainWindow : Window
                 .Select(c => c.Detail));
     }
 
+    /// <summary>手动刷新自检（切换输入法后点一下即可）。</summary>
+    private void BtnRecheck_Click(object? sender, RoutedEventArgs e)
+    {
+        RunPreflight();
+        InsertLog("已重新检测管理员权限与输入法。");
+    }
+
     private static readonly Avalonia.Media.IBrush OkBrush =
         Avalonia.Media.Brushes.SeaGreen;
     private static readonly Avalonia.Media.IBrush FailBrush =

@@ -286,6 +286,22 @@
                         ToolTip.Tip="默认 F6"/>
             </StackPanel>
 
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="后退热键" Classes="label"
+                         ToolTip.Tip="按一下后退 5 秒。播放中跳转可能让游戏侧口琴卡音"/>
+              <ComboBox x:Name="HotkeyRewindCombo" Width="86" FontSize="{DynamicResource FontSmall}"
+                        VerticalAlignment="Center" SelectionChanged="Hotkey_Changed"
+                        ToolTip.Tip="默认 F5"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="前进热键" Classes="label"
+                         ToolTip.Tip="按一下前进 5 秒。播放中跳转可能让游戏侧口琴卡音"/>
+              <ComboBox x:Name="HotkeyForwardCombo" Width="86" FontSize="{DynamicResource FontSmall}"
+                        VerticalAlignment="Center" SelectionChanged="Hotkey_Changed"
+                        ToolTip.Tip="默认 F7"/>
+            </StackPanel>
+
             <Button x:Name="BtnExport" Content="导出按键表 ▾" FontSize="{DynamicResource FontSmall}"
                     Padding="12,5" Classes="secondary" VerticalAlignment="Center" IsEnabled="False"
                     ToolTip.Tip="导出按键时序，与实际演奏一致">

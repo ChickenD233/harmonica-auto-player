@@ -9,6 +9,8 @@ public sealed class AppConfig
     public int Transpose { get; set; } = 0;        // 半音
     public int CountdownIndex { get; set; } = 1;   // 0秒/3/5/10
     public int ControlHotkeyIndex { get; set; } = 6; // 统一控制键（默认 F6：开始/暂停/继续）
+    public int RewindHotkeyIndex { get; set; } = 5;  // 后退热键（默认 F5）
+    public int ForwardHotkeyIndex { get; set; } = 7; // 前进热键（默认 F7）
     public bool ChordRoot { get; set; } = true;
     public bool Breath { get; set; } = false;
     public bool VocalExtract { get; set; } = false;   // 人声旋律提取（伴奏混同轨时）

@@ -43,6 +43,7 @@ public partial class MainWindow : Window
 
     private static readonly int[] CountdownOptions = { 0, 3, 5, 10 };
     private const int FixedLeadMs = 25;
+    private const double SeekStepSeconds = 5;   // 快进/后退热键的步长
 
     private bool _uiReady;   // 构造期各下拉框初始化会触发 *Changed，此时不应写日志
     private string _updateUrl = "";     // 有新版本时的下载页
@@ -64,6 +65,10 @@ public partial class MainWindow : Window
         for (int i = 1; i <= 12; i++) fkeys.Add("F" + i);
         HotkeyControlCombo.ItemsSource = fkeys;
         HotkeyControlCombo.SelectedIndex = 6;   // F6
+        HotkeyRewindCombo.ItemsSource = fkeys;
+        HotkeyRewindCombo.SelectedIndex = 5;    // F5
+        HotkeyForwardCombo.ItemsSource = fkeys;
+        HotkeyForwardCombo.SelectedIndex = 7;   // F7
 
         // 输入兼容档位：决定修饰键与音键之间的物理时间余量
         TimingCombo.ItemsSource = InputTiming.Names;
@@ -74,6 +79,8 @@ public partial class MainWindow : Window
         _cfg = AppConfig.Load();
         CountdownCombo.SelectedIndex = Math.Clamp(_cfg.CountdownIndex, 0, 3);
         HotkeyControlCombo.SelectedIndex = Math.Clamp(_cfg.ControlHotkeyIndex, 0, 12);
+        HotkeyRewindCombo.SelectedIndex = Math.Clamp(_cfg.RewindHotkeyIndex, 0, 12);
+        HotkeyForwardCombo.SelectedIndex = Math.Clamp(_cfg.ForwardHotkeyIndex, 0, 12);
         SliderSpeed.Value = Math.Clamp(_cfg.Speed, 50, 200);
         SliderTranspose.Value = Math.Clamp(_cfg.Transpose, -10, 10);
         ChkChordRoot.IsChecked = _cfg.ChordRoot;
@@ -175,9 +182,20 @@ public partial class MainWindow : Window
 
     private void ReconfigureHotkeys()
     {
-        int idx = Math.Max(0, HotkeyControlCombo.SelectedIndex);
-        int code = idx > 0 ? Input.GlobalHotkeys.FunctionKeyCode(idx) : 0;
-        Input.GlobalHotkeys.SetActive(code == 0 ? Array.Empty<int>() : new[] { code });
+        var codes = new List<int>();
+        foreach (var combo in new[] { HotkeyControlCombo, HotkeyRewindCombo, HotkeyForwardCombo })
+        {
+            int code = CodeOf(combo);
+            if (code != 0) codes.Add(code);
+        }
+        Input.GlobalHotkeys.SetActive(codes);
+    }
+
+    /// <summary>下拉项 → 虚拟键码。索引 0 = 无。</summary>
+    private static int CodeOf(ComboBox combo)
+    {
+        int idx = Math.Max(0, combo.SelectedIndex);
+        return idx > 0 ? Input.GlobalHotkeys.FunctionKeyCode(idx) : 0;
     }
 
     private void OnGlobalKeyWorker(int code, bool down)
@@ -187,9 +205,24 @@ public partial class MainWindow : Window
 
     private void HandleGlobalKey(int code)
     {
-        int idx = Math.Max(0, HotkeyControlCombo.SelectedIndex);
-        int hot = idx > 0 ? Input.GlobalHotkeys.FunctionKeyCode(idx) : 0;
-        if (hot != 0 && code == hot) ToggleControl();
+        if (code == 0) return;
+        if (code == CodeOf(HotkeyControlCombo)) { ToggleControl(); return; }
+        if (code == CodeOf(HotkeyRewindCombo)) { SeekRelative(-SeekStepSeconds); return; }
+        if (code == CodeOf(HotkeyForwardCombo)) SeekRelative(SeekStepSeconds);
+    }
+
+    /// <summary>快进/后退固定步长：播放中直接跳转，未播放只挪起始位置。</summary>
+    private void SeekRelative(double delta)
+    {
+        var eng = _engine;
+        bool playing = eng is { IsRunning: true };
+        double total = playing ? eng!.TotalSeconds : PreviewTotalSeconds;
+        if (total <= 0) return;
+        double cur = playing ? eng!.ElapsedSeconds : _previewSeconds;
+        double target = Math.Clamp(cur + delta, 0, total);
+        ApplySeek(target);
+        InsertLog($"{(delta < 0 ? "后退" : "前进")}到 {target:F1} 秒"
+                  + (playing ? "" : "（当前未播放，只改了起始位置）"));
     }
 
     /// <summary>统一控制键（默认 F6）：空闲=开始、倒计时中=取消、播放中=暂停、暂停中=继续；按钮与托盘项共用。</summary>
@@ -289,6 +322,8 @@ public partial class MainWindow : Window
         _cfg.Transpose = (int)SliderTranspose.Value;
         _cfg.CountdownIndex = Math.Clamp(CountdownCombo.SelectedIndex, 0, 3);
         _cfg.ControlHotkeyIndex = Math.Clamp(HotkeyControlCombo.SelectedIndex, 0, 12);
+        _cfg.RewindHotkeyIndex = Math.Clamp(HotkeyRewindCombo.SelectedIndex, 0, 12);
+        _cfg.ForwardHotkeyIndex = Math.Clamp(HotkeyForwardCombo.SelectedIndex, 0, 12);
         _cfg.ChordRoot = ChkChordRoot.IsChecked == true;
         _cfg.Breath = ChkBreath.IsChecked == true;
         _cfg.VocalExtract = ChkVocalExtract.IsChecked == true;

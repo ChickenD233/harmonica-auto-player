@@ -32,6 +32,8 @@ public partial class MainWindow : Window
     private int _countdownLeft;
     private bool _busy;
     private bool _seeking;          // 用户正在拖进度条
+    private List<MappedNote> _previewNotes = new();   // 全量音符（含超音域），供卷帘与定位使用
+    private double _previewSeconds;                   // 未播放时的定位秒数
     private bool _liveQueued;       // 已排队待应用的实时移调
     private IntPtr _gameHwnd;       // 播放期间记住的游戏窗口（用于停止时把焦点还给它）
     private double _removedLeadSec; // “去除开头空拍”实际剪掉的秒数（本轮）
@@ -103,6 +105,9 @@ public partial class MainWindow : Window
             RoutingStrategies.Bubble, handledEventsToo: true);
         SliderProgress.AddHandler(InputElement.PointerReleasedEvent, Progress_PointerReleased,
             RoutingStrategies.Bubble, handledEventsToo: true);
+
+        Roll.SeekPreview += OnRollPreview;
+        Roll.SeekCommitted += OnRollSeek;
 
         _previewDeb = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
         _previewDeb.Tick += (_, _) =>
@@ -361,27 +366,24 @@ public partial class MainWindow : Window
 
     private void Progress_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (_engine == null || !_engine.IsRunning) return;
+        if (!SliderProgress.IsEnabled) return;
         _seeking = true;
         SeekThumbTo(e);            // 点哪跳到哪（不用先抓滑块）
+        PreviewSeekFromSlider();
     }
 
     private void Progress_PointerMoved(object? sender, PointerEventArgs e)
     {
-        if (!_seeking || _engine == null) return;
+        if (!_seeking) return;
         SeekThumbTo(e);            // 按住拖动 = 预览位置（不打断播放）
+        PreviewSeekFromSlider();
     }
 
     private void Progress_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         if (!_seeking) return;
         _seeking = false;
-        var eng = _engine;
-        if (eng == null) return;
-        double max = SliderProgress.Maximum;
-        double frac = max > 0 ? SliderProgress.Value / max : 0;
-        eng.SeekFraction(frac);    // 松手才真正跳转
-        TxtTime.Text = $"{eng.ElapsedSeconds:F1} / {eng.TotalSeconds:F1} s";
+        ApplySeek(SliderProgress.Value);
     }
 
     private void SeekThumbTo(PointerEventArgs e)
@@ -391,6 +393,85 @@ public partial class MainWindow : Window
         double x = e.GetPosition(SliderProgress).X;
         double frac = Math.Clamp(x / w, 0.0, 1.0);
         SliderProgress.Value = frac * SliderProgress.Maximum;
+    }
+
+    /// <summary>拖动进度条时只更新显示，松手才跳转。</summary>
+    private void PreviewSeekFromSlider() => ShowPosition(SliderProgress.Value);
+
+    /// <summary>卷帘拖动中：只挪指针与音符显示，不打断播放。</summary>
+    private void OnRollPreview(double seconds)
+    {
+        _seeking = true;          // 让 UI 定时器别把指针拽回去
+        ShowPosition(seconds);
+    }
+
+    /// <summary>卷帘松手：真正跳转。</summary>
+    private void OnRollSeek(double seconds)
+    {
+        _seeking = false;
+        ApplySeek(seconds);
+    }
+
+    /// <summary>定位到某个秒数：播放中跳转，未播放只记住位置。</summary>
+    private void ApplySeek(double seconds)
+    {
+        var eng = _engine;
+        if (eng is { IsRunning: true })
+        {
+            double total = Math.Max(0.001, eng.TotalSeconds);
+            eng.SeekFraction(Math.Clamp(seconds / total, 0, 1));
+        }
+        else
+        {
+            _previewSeconds = Math.Clamp(seconds, 0, PreviewTotalSeconds);
+        }
+        ShowPosition(seconds);
+    }
+
+    private double PreviewTotalSeconds =>
+        _previewNotes.Count == 0 ? 0 : _previewNotes.Max(n => n.End);
+
+    /// <summary>把进度条、卷帘、时间与音符一起摆到某个秒数（不动引擎）。</summary>
+    private void ShowPosition(double seconds)
+    {
+        var eng = _engine;
+        double total = eng is { IsRunning: true } ? Math.Max(0.001, eng.TotalSeconds) : PreviewTotalSeconds;
+        double t = Math.Clamp(seconds, 0, total);
+        SliderProgress.Value = t;
+        Roll.SetPosition(t);
+        TxtTime.Text = $"{t:F1} / {total:F1} s";
+        UpdateSeekNote(t);
+    }
+
+    /// <summary>显示某个时刻的音：音名 + 简谱 + 要按的键。不传则取当前指针位置。</summary>
+    private void UpdateSeekNote(double? atSeconds = null)
+    {
+        if (TxtSeekNote == null) return;
+        double t = atSeconds ?? (_engine is { IsRunning: true } ? _engine.ElapsedSeconds : _previewSeconds);
+        MappedNote? note = _previewNotes.LastOrDefault(n => n.Start <= t && t < n.End);
+        if (note == null) { TxtSeekNote.Text = "—"; return; }
+        string name = Music.NoteName(note.Pitch);
+        if (!note.InRange) { TxtSeekNote.Text = $"{name} 超音域"; return; }
+        string mods = note.OctaveSlot switch
+        {
+            Slot.Low => "左键+",
+            Slot.High => "右键+",
+            _ => ""
+        };
+        if (note.Sharp) mods += "中键+";
+        TxtSeekNote.Text = $"{name} {Music.DegreeName(note.Pitch)} · {mods}{note.Key}";
+    }
+
+    /// <summary>没有可定位的谱面时，清空进度条、卷帘与音符显示。</summary>
+    private void ResetSeekUi()
+    {
+        Roll.SetNotes(_previewNotes, 0);
+        Roll.SetPosition(0);
+        SliderProgress.Maximum = 0.1;
+        SliderProgress.Value = 0;
+        SliderProgress.IsEnabled = false;
+        TxtTime.Text = "0.0 / 0.0 s";
+        TxtSeekNote.Text = "—";
     }
 
     // ================= 文件载入 =================
@@ -884,11 +965,27 @@ public partial class MainWindow : Window
                 : "已载入 —— 单击一行作为主旋律；勾选“合”可按 1、2、3 优先级合奏。";
             LblWarn.Text = "";
             LblWarn.Foreground = warnColor;
+            _previewNotes = new List<MappedNote>();
+            _previewSeconds = 0;
+            ResetSeekUi();
             UpdateTransportUi();
             return;
         }
 
         var m = BuildMapping();
+
+        // 载入后即可定位：进度条与卷帘按谱面时间摆好（不必先播放）
+        _previewNotes = m.Notes;
+        double totalSec = PreviewTotalSeconds;
+        _previewSeconds = Math.Clamp(_previewSeconds, 0, totalSec);
+        Roll.SetNotes(m.Notes, totalSec);
+        Roll.SetPosition(_previewSeconds);
+        SliderProgress.Maximum = Math.Max(0.1, totalSec);
+        SliderProgress.Value = _previewSeconds;
+        SliderProgress.IsEnabled = m.Notes.Count > 0;
+        TxtTime.Text = $"{_previewSeconds:F1} / {totalSec:F1} s";
+        UpdateSeekNote();
+
         if (rows.Count > 1)
         {
             string order = string.Join(" > ", rows.Select(r => $"{r.MixRank}「{r.Name}」"));
@@ -1019,12 +1116,20 @@ public partial class MainWindow : Window
         if (!Input.InputSender.IsSupported)
             InsertLog("（当前平台不支持输入模拟，仅流程演示）");
 
-        SliderProgress.Value = 0;
+        // 播放前可能已把进度条或卷帘拖到某个位置，从那里开始
+        double startFrac = SliderProgress.Maximum > 0
+            ? Math.Clamp(SliderProgress.Value / SliderProgress.Maximum, 0, 1) : 0;
         _gameHwnd = IntPtr.Zero;   // 新一轮播放重新记忆游戏窗口
         bool breath = ChkBreath.IsChecked == true;
         engine.Timing = InputTiming.FromIndex(TimingCombo.SelectedIndex);
         engine.Play(_playNotes, speed, FixedLeadMs, loop, breath);
         SliderProgress.Maximum = Math.Max(0.1, engine.TotalSeconds);
+        if (startFrac > 0.0005)
+        {
+            engine.SeekFraction(startFrac);
+            SliderProgress.Value = startFrac * SliderProgress.Maximum;
+            InsertLog($"从 {startFrac * engine.TotalSeconds:F1} 秒开始播放。");
+        }
         // 自检把“按键发不进游戏”的常见原因指出来，省得用户逐个猜
         RunPreflight();
 
@@ -1061,11 +1166,15 @@ public partial class MainWindow : Window
             IntPtr fg = Input.InputSender.ForegroundWindow;
             if (fg != IntPtr.Zero && fg != SelfHwnd) _gameHwnd = fg;
 
-            if (!_seeking)   // 拖动进度条时不要覆盖用户位置
+            if (!_seeking)   // 拖动进度条或卷帘时不要覆盖用户位置
+            {
                 SliderProgress.Value = Math.Min(eng.ElapsedSeconds, SliderProgress.Maximum);
-            TxtTime.Text = eng.LoopCount > 0
-                ? $"{eng.ElapsedSeconds:F1} / {eng.TotalSeconds:F1} s（第 {eng.LoopCount + 1} 遍）"
-                : $"{eng.ElapsedSeconds:F1} / {eng.TotalSeconds:F1} s";
+                TxtTime.Text = eng.LoopCount > 0
+                    ? $"{eng.ElapsedSeconds:F1} / {eng.TotalSeconds:F1} s（第 {eng.LoopCount + 1} 遍）"
+                    : $"{eng.ElapsedSeconds:F1} / {eng.TotalSeconds:F1} s";
+                Roll.SetPosition(eng.ElapsedSeconds);
+                UpdateSeekNote();
+            }
             if (!string.IsNullOrEmpty(eng.CurrentNote))
             {
                 LblStatus.Foreground = OkBrush;
@@ -1120,10 +1229,11 @@ public partial class MainWindow : Window
         _liveQueued = false;
         _seeking = false;
         SetBusy(false);
+        // 停止后按谱面时间换算当前位置，方便直接重新定位
+        double frac = SliderProgress.Maximum > 0 ? SliderProgress.Value / SliderProgress.Maximum : 0;
+        _previewSeconds = frac * PreviewTotalSeconds;
         RefreshPreview();
-        SliderProgress.Value = 0;
-        SliderProgress.IsEnabled = false;
-        TxtTime.Text = "0.0 / 0.0 s";
+        Roll.SetPosition(_previewSeconds);
         LblStatus.FontSize = 22;
         SetCountdownChrome(false);
         SetIdleHint();

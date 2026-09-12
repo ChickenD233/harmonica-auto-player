@@ -182,22 +182,29 @@
       </Border>
 
       <Border Grid.Row="2" Classes="card" Margin="{DynamicResource CardGap}">
-        <Grid ColumnDefinitions="Auto,*,Auto">
-          <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-            <Button x:Name="BtnPlay" Content="▶ 播放 (F6)" Click="BtnPlay_Click"
-                    Classes="accent" FontSize="{DynamicResource FontTitle}" Padding="20,8" IsEnabled="False"/>
-            <Button x:Name="BtnStop" Content="■ 停止" Click="BtnStop_Click"
-                    Classes="secondary" FontSize="{DynamicResource FontTitle}" Padding="20,8" IsEnabled="False"/>
-            <CheckBox x:Name="ChkLoop" Content="循环" VerticalAlignment="Center" FontSize="{DynamicResource FontBody}"/>
-          </StackPanel>
-          <Grid Grid.Column="1" ColumnDefinitions="*,Auto" Margin="16,0,0,0">
-            <Slider x:Name="SliderProgress" VerticalAlignment="Center" Margin="0,0,10,0"
-                    Minimum="0" Maximum="1" Value="0" IsEnabled="False"/>
-            <TextBlock Grid.Column="1" x:Name="TxtTime" Classes="value"
-                       Text="0.0 / 0.0 s"/>
+        <Grid RowDefinitions="Auto,Auto">
+          <!-- 内置卷帘：载入后即可点/拖定位；灰条=超出音域 -->
+          <local:PianoRoll x:Name="Roll" Grid.Row="0" Height="88" Margin="0,0,0,10"
+                           ToolTip.Tip="点或拖动可定位；播放前先调到要开始的秒数"/>
+          <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto">
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+              <Button x:Name="BtnPlay" Content="▶ 播放 (F6)" Click="BtnPlay_Click"
+                      Classes="accent" FontSize="{DynamicResource FontTitle}" Padding="20,8" IsEnabled="False"/>
+              <Button x:Name="BtnStop" Content="■ 停止" Click="BtnStop_Click"
+                      Classes="secondary" FontSize="{DynamicResource FontTitle}" Padding="20,8" IsEnabled="False"/>
+              <CheckBox x:Name="ChkLoop" Content="循环" VerticalAlignment="Center" FontSize="{DynamicResource FontBody}"/>
+            </StackPanel>
+            <Grid Grid.Column="1" ColumnDefinitions="*,Auto,Auto" Margin="16,0,0,0">
+              <Slider x:Name="SliderProgress" VerticalAlignment="Center" Margin="0,0,10,0"
+                      Minimum="0" Maximum="1" Value="0" IsEnabled="False"/>
+              <TextBlock Grid.Column="1" x:Name="TxtTime" Classes="value"
+                         VerticalAlignment="Center" Text="0.0 / 0.0 s"/>
+              <TextBlock Grid.Column="2" x:Name="TxtSeekNote" Classes="value" Margin="12,0,0,0"
+                         VerticalAlignment="Center" Text="—"/>
+            </Grid>
+            <TextBlock Grid.Column="2" x:Name="TxtHotHint" Classes="sectionLabel" VerticalAlignment="Center" Margin="12,0,0,0"
+                       Text="F6：开始 / 暂停 / 继续"/>
           </Grid>
-          <TextBlock Grid.Column="2" x:Name="TxtHotHint" Classes="sectionLabel" VerticalAlignment="Center" Margin="12,0,0,0"
-                     Text="F6：开始 / 暂停 / 继续"/>
         </Grid>
       </Border>
 

@@ -44,6 +44,8 @@ public partial class MainWindow : Window
     private const int FixedLeadMs = 25;
 
     private bool _uiReady;   // 构造期各下拉框初始化会触发 *Changed，此时不应写日志
+    private string _updateUrl = "";     // 有新版本时的下载页
+    private string _updateTag = "";     // 有新版本时的版本号
 
     public MainWindow()
     {
@@ -114,6 +116,9 @@ public partial class MainWindow : Window
         SetIdleHint();
         UpdateTransportUi();
         _uiReady = true;
+
+        // 后台静默检查新版本（不阻塞界面；没网就悄悄跳过）
+        _ = CheckUpdateAsync();
 
         InsertLog("欢迎使用 口琴自动演奏器（三角洲行动）");
         InsertLog("用法：打开 MIDI 文件 → 在左侧单击一行作为主旋律 → 按 F6（或点「▶ 播放」），倒计时内切到游戏并装备口琴即可。");
@@ -574,7 +579,7 @@ public partial class MainWindow : Window
             if (ChkVocalExtract.IsChecked == true)
                 rowNotes = NoteMapper.ExtractVocalMelody(rowNotes);   // 人声旋律提取（伴奏混同轨）
             else if (ChkChordRoot.IsChecked == true)
-                rowNotes = NoteMapper.ChordRootOnly(rowNotes);         // 同刻取最高
+                rowNotes = MelodyExtractor.Extract(rowNotes);          // 自动提取主旋律（分声部 + 自动择一）
             foreach (var n in rowNotes) voices.Add((k + 1, n));  // 1 最优先
         }
         var merged = NoteMapper.MergeVoicesByPriority(voices);
@@ -671,6 +676,58 @@ public partial class MainWindow : Window
     private void Breath_Changed(object? sender, RoutedEventArgs e)
     {
         ScheduleSave();
+    }
+
+    // ================= 自动检查更新 =================
+
+    /// <summary>
+    /// 后台查询 GitHub 最新 Release。有新版本 → 顶部显示提示条（点击跳转下载）；
+    /// 没有 / 没网 / 被墙都静默忽略，绝不打扰使用。
+    /// </summary>
+    private async Task CheckUpdateAsync()
+    {
+        try
+        {
+            var r = await AutoUpdate.CheckAsync(_cfg?.SkippedUpdateTag);
+            if (r.Error != null || !r.HasUpdate || r.Skipped) return;
+
+            _updateUrl = r.ReleaseUrl;
+            _updateTag = r.LatestTag;
+
+            UiPost(() =>
+            {
+                TxtUpdate.Text = $"发现新版本 v{r.LatestTag}（当前 v{r.CurrentTag}）——" +
+                                 "点此打开下载页，或到日志区复制链接。";
+                UpdateBanner.IsVisible = true;
+                InsertLog($"发现新版本：v{r.LatestTag}（当前 v{r.CurrentTag}）　下载页：{r.ReleaseUrl}");
+            });
+        }
+        catch
+        {
+            // 检查更新失败不影响任何功能
+        }
+    }
+
+    /// <summary>左键点提示条 = 打开下载页；右键点 = 跳过这个版本（不再提示，下个版本仍会提示）。</summary>
+    private void UpdateBanner_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_updateUrl)) return;
+
+        var props = e.GetCurrentPoint(this).Properties;
+        if (props.IsRightButtonPressed)
+        {
+            if (_cfg != null && !string.IsNullOrEmpty(_updateTag))
+            {
+                _cfg.SkippedUpdateTag = _updateTag;
+                _cfg.Save();
+                UpdateBanner.IsVisible = false;
+                InsertLog($"已跳过 v{_updateTag}；下个新版本仍会提示。");
+            }
+            return;
+        }
+
+        AutoUpdate.OpenUrl(_updateUrl);
+        InsertLog($"已打开下载页：{_updateUrl}");
     }
 
     /// <summary>输入兼容档位：只影响下一次开始播放时的事件时序，不需要刷新预览。</summary>

@@ -150,13 +150,22 @@
     <!-- ================= 右栏：演奏 ================= -->
     <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
 
-      <Border Grid.Row="0" Classes="card">
-        <StackPanel>
-          <TextBlock x:Name="LblMelody" TextWrapping="Wrap" FontSize="14" LineHeight="21"
-                     Text="打开 MIDI 文件，并在左侧单击一行作为主旋律。"/>
-          <TextBlock x:Name="LblWarn" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0" Text=""/>
-        </StackPanel>
-      </Border>
+      <!-- 第 0 行：有新版本时的提示条 + 主旋律信息（同一行内纵向排列，避免重叠） -->
+      <StackPanel Grid.Row="0">
+        <Border x:Name="UpdateBanner" IsVisible="False" Classes="card"
+                Margin="0,0,0,10" Padding="12,9" Background="#EAF3FF" BorderBrush="#BBD6F5"
+                Cursor="Hand" PointerPressed="UpdateBanner_PointerPressed">
+          <TextBlock x:Name="TxtUpdate" TextWrapping="Wrap" FontSize="13" Foreground="#1B4F91"
+                     LineHeight="20" Text=""/>
+        </Border>
+        <Border Classes="card">
+          <StackPanel>
+            <TextBlock x:Name="LblMelody" TextWrapping="Wrap" FontSize="14" LineHeight="21"
+                       Text="打开 MIDI 文件，并在左侧单击一行作为主旋律。"/>
+            <TextBlock x:Name="LblWarn" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0" Text=""/>
+          </StackPanel>
+        </Border>
+      </StackPanel>
 
       <Border Grid.Row="1" Classes="card" Margin="0,10,0,0" Padding="10,12">
         <TextBlock x:Name="LblStatus" FontSize="21" FontWeight="Bold" Foreground="#1E7A3C"
@@ -223,9 +232,9 @@
                       VerticalAlignment="Center" SelectionChanged="Timing_Changed"
                       ToolTip.Tip="稳健=给30fps/掉帧留余量；标准=60fps 推荐；极限=高帧率下跟快歌。若仍漏音请选「稳健」。"/>
           </StackPanel>
-          <CheckBox x:Name="ChkChordRoot" Content="同刻多音取最高（还原主旋律）" FontSize="13"
+          <CheckBox x:Name="ChkChordRoot" Content="自动提取主旋律" FontSize="13"
                     IsChecked="True" VerticalAlignment="Center" Margin="0,0,24,4"
-                    ToolTip.Tip="口琴一次只能吹一个音：多个音同时响时吹最高的那个——主旋律通常在最高声部，尽量贴近原曲"
+                    ToolTip.Tip="口琴一次只能吹一个音。开：先分出伴奏/旋律各声部，再挑最像主旋律的那条（钢琴/吉他改编曲也能认出旋律）；关：不做处理，同刻多音按原样交给下面逻辑"
                     IsCheckedChanged="Option_Changed"/>
           <CheckBox x:Name="ChkVocalExtract" Content="人声旋律提取" FontSize="13"
                     IsChecked="False" VerticalAlignment="Center" Margin="0,0,24,4"

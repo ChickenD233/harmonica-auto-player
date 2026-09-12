@@ -16,6 +16,7 @@ public sealed class AppConfig
     public bool FirstRunDone { get; set; } = false;   // 首次“快速上手”是否已看过
     public bool AutoMinimizeOnPlay { get; set; } = true;  // 播放开始后自动最小化窗口
     public int TimingIndex { get; set; } = 1;         // 输入兼容档位：0稳健/1标准/2极限
+    public string SkippedUpdateTag { get; set; } = "";   // 用户选择“跳过”的版本号（空=不跳过）
 
     private static string DirPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HarpAutoPlayer");

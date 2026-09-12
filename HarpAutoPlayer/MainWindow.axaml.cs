@@ -790,6 +790,13 @@ public partial class MainWindow : Window
             InsertLog($"已自动选中推荐轨：{best.DisplayName}（想换就点其它行）");
         else
             InsertLog($"已自动选中较合适的轨：{best.DisplayName}（音域贴合不多，可用「一键移调」）");
+
+        // 覆盖不全就明说：进度条与卷帘只覆盖这一段，免得用户以为「加载不全」
+        double span = best.Candidate.Notes.Count == 0 ? 0 : best.Candidate.Notes.Max(n => n.End);
+        double fileSec = _parsed?.DurationSec ?? 0;
+        if (fileSec > 5 && span < fileSec * 0.6)
+            InsertLog($"注意：这条轨只到 {span:F1}s，全曲 {fileSec:F1}s。" +
+                      $"进度条与卷帘只覆盖这一段，可在左侧点其它行换轨。");
     }
 
     private double ScoreCandidate(TrackRowVM r)

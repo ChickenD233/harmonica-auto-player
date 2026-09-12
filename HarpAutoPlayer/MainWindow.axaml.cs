@@ -220,18 +220,38 @@ public partial class MainWindow : Window
         if (code == CodeOf(HotkeyForwardCombo)) SeekRelative(SeekStepSeconds);
     }
 
-    /// <summary>快进/后退固定步长：播放中直接跳转，未播放只挪起始位置。</summary>
+    /// <summary>
+    /// 当前播放位置的唯一来源。三个播放器状态各有一套时间，混用就会取到过期的 0：
+    /// 试听中取试听时钟，演奏中取引擎，都没有才取"起始位置"。
+    /// </summary>
+    private double CurrentPosition()
+    {
+        if (_previewOn) return PreviewNow();
+        var eng = _engine;
+        if (eng is { IsRunning: true }) return eng.ElapsedSeconds;
+        return _previewSeconds;
+    }
+
+    /// <summary>当前总时长。与 <see cref="CurrentPosition"/> 必须取同一套状态，否则夹取会错。</summary>
+    private double CurrentTotal()
+    {
+        if (_previewOn) return _previewTotal;
+        var eng = _engine;
+        if (eng is { IsRunning: true }) return Math.Max(0.001, eng.TotalSeconds);
+        return PreviewTotalSeconds;
+    }
+
+    /// <summary>快进/后退固定步长：从当前位置相对移动。试听中、演奏中、空闲都可用。</summary>
     private void SeekRelative(double delta)
     {
-        var eng = _engine;
-        bool playing = eng is { IsRunning: true };
-        double total = playing ? eng!.TotalSeconds : PreviewTotalSeconds;
+        double total = CurrentTotal();
         if (total <= 0) return;
-        double cur = playing ? eng!.ElapsedSeconds : _previewSeconds;
+        double cur = Math.Clamp(CurrentPosition(), 0, total);
         double target = Math.Clamp(cur + delta, 0, total);
         ApplySeek(target);
-        InsertLog($"{(delta < 0 ? "后退" : "前进")}到 {target:F1} 秒"
-                  + (playing ? "" : "（当前未播放，只改了起始位置）"));
+        InsertLog($"{(delta < 0 ? "后退" : "前进")} {Math.Abs(delta):F0} 秒："
+                  + $"{cur:F1} → {target:F1} s"
+                  + (_previewOn ? "（试听）" : _engine is { IsRunning: true } ? "" : "（未播放，只改了起始位置）"));
     }
 
     /// <summary>统一控制键（默认 F6）：空闲=开始、倒计时中=取消、播放中=暂停、暂停中=继续；按钮与托盘项共用。</summary>
@@ -483,14 +503,14 @@ public partial class MainWindow : Window
     /// <summary>进度条/卷帘/时间/定位音一起摆到某个秒数（不动引擎，也不动试听时钟）。</summary>
     private void ShowPosition(double seconds)
     {
-        double total = _previewOn
-            ? _previewTotal
-            : (_engine is { IsRunning: true } ? Math.Max(0.001, _engine.TotalSeconds) : PreviewTotalSeconds);
+        double total = CurrentTotal();
         double t = Math.Clamp(seconds, 0, total);
         SliderProgress.Value = t;
         Roll.SetPosition(t);
         TxtTime.Text = $"{t:F1} / {total:F1} s";
         UpdateSeekNote(t);
+        // 空闲时把位置记下来。否则 F5/F7 取到过期的 0，表现就是"F7 跳到 5 秒、F5 回开头"。
+        if (!_previewOn && _engine is not { IsRunning: true }) _previewSeconds = t;
     }
 
     /// <summary>显示某个时刻的音：音名 + 简谱 + 要按的键。不传则取当前指针位置。</summary>

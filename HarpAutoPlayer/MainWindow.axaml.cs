@@ -34,6 +34,8 @@ public partial class MainWindow : Window
     private bool _seeking;          // 用户正在拖进度条
     private List<MappedNote> _previewNotes = new();   // 全量音符（含超音域），供卷帘与定位使用
     private double _previewSeconds;                   // 未播放时的定位秒数
+    private readonly ScoreEditor _editor = new();     // 手动编辑后的谱面
+    private bool _editing;                            // true = 用编辑结果，不再用自动提取
     private bool _liveQueued;       // 已排队待应用的实时移调
     private IntPtr _gameHwnd;       // 播放期间记住的游戏窗口（用于停止时把焦点还给它）
     private double _removedLeadSec; // “去除开头空拍”实际剪掉的秒数（本轮）
@@ -115,6 +117,13 @@ public partial class MainWindow : Window
 
         Roll.SeekPreview += OnRollPreview;
         Roll.SeekCommitted += OnRollSeek;
+        Roll.SelectionChanged += _ => UpdateEditUi();
+        Roll.NoteMoved += OnRollNoteMoved;
+        Roll.NoteAddRequested += OnRollNoteAdd;
+        Roll.NoteDeleteRequested += OnRollNoteDelete;
+        ChkSnap.IsCheckedChanged += (_, _) => Roll.SnapEnabled = ChkSnap.IsChecked == true;
+        KeyDown += OnWindowKeyDown;
+        Roll.SnapEnabled = ChkSnap.IsChecked == true;
 
         _previewDeb = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
         _previewDeb.Tick += (_, _) =>
@@ -497,10 +506,182 @@ public partial class MainWindow : Window
         TxtSeekNote.Text = $"{name} {Music.DegreeName(note.Pitch)} · {mods}{note.Key}";
     }
 
+    // ================= 卷帘编辑 =================
+
+    /// <summary>谱面来源要变了：有手动改动就先丢弃并说明，否则用户会以为点了没反应。</summary>
+    private void DropEditsIfAny(string why)
+    {
+        if (!_editing) return;
+        ResetEdits();
+        InsertLog($"已丢弃手动改动（{why}）。");
+    }
+
+    /// <summary>第一次编辑时，把当前自动结果冻结成可编辑谱面。</summary>
+    private void BeginEditIfNeeded()
+    {
+        if (_editing) return;
+        _editor.Reset(ComputeAutoNotes());
+        _editing = true;
+        InsertLog("已进入编辑模式：自动提取的选项不再影响谱面，点「还原为自动」可退出。");
+    }
+
+    /// <summary>换歌或点「还原为自动」时丢弃全部手动改动。</summary>
+    private void ResetEdits()
+    {
+        _editing = false;
+        _editor.Clear();
+        Roll.Select(-1);
+    }
+
+    /// <summary>卷帘里拖完一个音：音高与起止都按拖动结果写回。</summary>
+    private void OnRollNoteMoved(int index, int pitch, double start, double end)
+    {
+        BeginEditIfNeeded();
+        int ni = _editor.Update(index, pitch, start, end);
+        RefreshPreview();
+        Roll.Select(ni);
+        InsertLog($"已改音：{Music.NoteName(pitch)} {start:F2}-{end:F2}s");
+    }
+
+    /// <summary>卷帘空白处双击：加一个音，长度取当前谱面的中位音长。</summary>
+    private void OnRollNoteAdd(double seconds, int pitch)
+    {
+        BeginEditIfNeeded();
+        double len = MedianNoteLength();
+        int ni = _editor.Add(pitch, seconds, seconds + len);
+        RefreshPreview();
+        Roll.Select(ni);
+        InsertLog($"已加音：{Music.NoteName(pitch)} {seconds:F2}s（长 {len:F2}s）");
+    }
+
+    /// <summary>右键点中音符：删掉它。</summary>
+    private void OnRollNoteDelete(int index)
+    {
+        if (index < 0) return;
+        BeginEditIfNeeded();
+        if (index >= _editor.Count) return;
+        var n = _editor.Notes[index];
+        _editor.DeleteAt(index);
+        RefreshPreview();
+        Roll.Select(-1);
+        InsertLog($"已删音：{Music.NoteName(n.Pitch)} {n.Start:F2}s");
+    }
+
+    /// <summary>加音用的默认长度：取现有音符的中位长度，夹在 0.1-1.0 秒。</summary>
+    private double MedianNoteLength()
+    {
+        var lens = _editor.Notes.Select(n => n.End - n.Start).Where(l => l > 0.02).OrderBy(l => l).ToList();
+        if (lens.Count == 0) return 0.25;
+        return Math.Clamp(lens[lens.Count / 2], 0.1, 1.0);
+    }
+
+    private void DoUndo()
+    {
+        if (!_editing || !_editor.Undo()) { InsertLog("没有可撤销的操作。"); return; }
+        RefreshPreview();
+        Roll.Select(-1);
+        InsertLog("已撤销。");
+    }
+
+    private void DoRedo()
+    {
+        if (!_editing || !_editor.Redo()) { InsertLog("没有可重做的操作。"); return; }
+        RefreshPreview();
+        Roll.Select(-1);
+        InsertLog("已重做。");
+    }
+
+    /// <summary>删除卷帘里选中的音。</summary>
+    private void DeleteSelectedNote()
+    {
+        int i = Roll.SelectedIndex;
+        if (i < 0) { InsertLog("先在卷帘上点一个音，再删除。"); return; }
+        OnRollNoteDelete(i);
+    }
+
+    private void UpdateEditUi()
+    {
+        if (BtnUndo == null) return;
+        BtnUndo.IsEnabled = _editing && _editor.CanUndo;
+        BtnRedo.IsEnabled = _editing && _editor.CanRedo;
+        BtnDeleteNote.IsEnabled = Roll.SelectedIndex >= 0;
+        BtnResetEdits.IsEnabled = _editing;
+        BtnExportMidi.IsEnabled = GetActiveRawNotes().Count > 0;
+    }
+
+    private void Undo_Click(object? sender, RoutedEventArgs e) => DoUndo();
+    private void Redo_Click(object? sender, RoutedEventArgs e) => DoRedo();
+    private void DeleteNote_Click(object? sender, RoutedEventArgs e) => DeleteSelectedNote();
+
+    private void Snap_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (Roll != null) Roll.SnapEnabled = ChkSnap.IsChecked == true;
+    }
+
+    private void ResetEdits_Click(object? sender, RoutedEventArgs e)
+    {
+        if (!_editing) { InsertLog("当前就是自动结果，没有可还原的改动。"); return; }
+        ResetEdits();
+        RefreshPreview();
+        InsertLog("已还原为自动提取结果。");
+    }
+
+    /// <summary>窗口级快捷键：删除、撤销、重做。卷帘不必先获得焦点。</summary>
+    private void OnWindowKeyDown(object? sender, KeyEventArgs e)
+    {
+        bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+        if (ctrl && e.Key == Key.Z)
+        {
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) DoRedo(); else DoUndo();
+            e.Handled = true;
+            return;
+        }
+        if (ctrl && e.Key == Key.Y) { DoRedo(); e.Handled = true; return; }
+        if (e.Key == Key.Delete) { DeleteSelectedNote(); e.Handled = true; }
+    }
+
+    /// <summary>把当前谱面写成标准 MIDI 文件。</summary>
+    private async void ExportMidi_Click(object? sender, RoutedEventArgs e)
+    {
+        var raw = GetActiveRawNotes();
+        if (raw.Count == 0) { InsertLog("没有音符可导出。"); return; }
+        try
+        {
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "导出编辑后的 MIDI",
+                SuggestedFileName = SuggestMidiName(),
+                DefaultExtension = "mid",
+                FileTypeChoices = new List<FilePickerFileType>
+                {
+                    new("MIDI 文件") { Patterns = new List<string> { "*.mid" } }
+                }
+            });
+            if (file == null) return;
+            string? path = file.TryGetLocalPath();
+            if (string.IsNullOrEmpty(path)) return;
+
+            MidiExporter.Write(path, raw, "HarpAutoPlayer 编辑");
+            InsertLog($"已导出 MIDI：{raw.Count} 个音 → {System.IO.Path.GetFileName(path)}");
+        }
+        catch (Exception ex)
+        {
+            InsertLog($"导出 MIDI 失败：{ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private string SuggestMidiName()
+    {
+        string name = "edited";
+        if (_parsed != null && !string.IsNullOrEmpty(_parsed.FilePath))
+            name = System.IO.Path.GetFileNameWithoutExtension(_parsed.FilePath) + "-edited";
+        return name + ".mid";
+    }
+
     /// <summary>没有可定位的谱面时，清空进度条、卷帘与音符显示。</summary>
     private void ResetSeekUi()
     {
-        Roll.SetNotes(_previewNotes, 0);
+        Roll.SetNotes(Array.Empty<RawNote>(), Array.Empty<int>(), 0);
         Roll.SetPosition(0);
         SliderProgress.Maximum = 0.1;
         SliderProgress.Value = 0;
@@ -548,6 +729,8 @@ public partial class MainWindow : Window
                 InsertLog($"已载入 {System.IO.Path.GetFileName(path)}：{parsed.Candidates.Count} 个候选，时长 ≈ {parsed.DurationSec:F1}s");
 
                 _selected = null;
+                _previewSeconds = 0;      // 换歌必须回到 0，否则上一首的位置会夹到新曲末尾 → 一播放就结束
+                ResetEdits();
                 ChooseRecommendedTrack();
                 RefreshPreview();
             }
@@ -646,6 +829,16 @@ public partial class MainWindow : Window
             s += 30.0 * map.InRangeCount / notes.Count;   // 音域贴合度（不抢先于名字线索）
             if (notes.Count < 8) s -= 20;                  // 太碎不像是能吹的歌
             s += Math.Min(notes.Count / 50.0, 8.0);        // 稍偏好完整曲目轨
+
+            // 覆盖时长：只盖住开头几秒的轨（前奏、过门、演示音）不该压过整首主旋律。
+            // 用「最后一个音的结束时刻」而不是跨度，这样后半段才进旋律的轨也能得高分。
+            double fileSec = _parsed?.DurationSec ?? 0;
+            if (fileSec > 1)
+            {
+                double cover = Math.Clamp(notes.Max(n => n.End) / fileSec, 0, 1);
+                s += 60.0 * cover * cover;
+                if (cover < 0.25) s -= 25;
+            }
         }
         return s;
     }
@@ -658,6 +851,7 @@ public partial class MainWindow : Window
     private void SetMain(TrackRowVM? row)
     {
         if (row == null) return;
+        DropEditsIfAny("换了主旋律轨");
         foreach (var r in _tracks) r.IsMain = ReferenceEquals(r, row);
         _selected = row;
         RefreshPreview();
@@ -675,8 +869,12 @@ public partial class MainWindow : Window
         return _selected != null ? new List<TrackRowVM> { _selected } : new List<TrackRowVM>();
     }
 
+    /// <summary>当前谱面：手动编辑过就用编辑结果，否则用自动提取结果。</summary>
+    private List<RawNote> GetActiveRawNotes() =>
+        _editing ? _editor.Notes.ToList() : ComputeAutoNotes();
+
     /// <summary>把当前要演奏的音符（含合奏/和弦取根）合并成一条线（未移调）。</summary>
-    private List<RawNote> GetActiveRawNotes()
+    private List<RawNote> ComputeAutoNotes()
     {
         var rows = ActiveRows();
         if (rows.Count == 0)
@@ -813,6 +1011,7 @@ public partial class MainWindow : Window
     {
         if (sender is CheckBox cb && cb.DataContext is TrackRowVM row)
         {
+            DropEditsIfAny("改了合奏声部");
             bool on = cb.IsChecked == true;
             row.IsMix = on;   // 保证模型状态一致
             if (on)
@@ -1003,17 +1202,20 @@ public partial class MainWindow : Window
             _previewNotes = new List<MappedNote>();
             _previewSeconds = 0;
             ResetSeekUi();
+            UpdateEditUi();
             UpdateTransportUi();
             return;
         }
 
-        var m = BuildMapping();
+        var raw = GetActiveRawNotes();
+        var m = raw.Count == 0 ? new MappingResult() : NoteMapper.Map(raw, CurrentTranspose, null);
 
         // 载入后即可定位：进度条与卷帘按谱面时间摆好（不必先播放）
         _previewNotes = m.Notes;
         double totalSec = PreviewTotalSeconds;
         _previewSeconds = Math.Clamp(_previewSeconds, 0, totalSec);
-        Roll.SetNotes(m.Notes, totalSec);
+        // 卷帘轴上留 2% 余量，末尾才好双击加音
+        Roll.SetNotes(raw, m.Notes.Where(n => n.InRange).Select(n => n.Pitch).Distinct(), totalSec * 1.02 + 0.3);
         Roll.SetPosition(_previewSeconds);
         SliderProgress.Maximum = Math.Max(0.1, totalSec);
         SliderProgress.Value = _previewSeconds;

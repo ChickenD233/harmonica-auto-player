@@ -3,8 +3,8 @@
         xmlns:local="clr-namespace:HarpAutoPlayer"
         x:Class="HarpAutoPlayer.MainWindow"
         Title="口琴自动演奏器（三角洲行动）"
-        Width="1080" Height="680"
-        MinWidth="980" MinHeight="580"
+        Width="1120" Height="780"
+        MinWidth="980" MinHeight="660"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource BrushCanvas}"
         FontFamily="{DynamicResource FontUi}"
@@ -182,11 +182,29 @@
       </Border>
 
       <Border Grid.Row="2" Classes="card" Margin="{DynamicResource CardGap}">
-        <Grid RowDefinitions="Auto,Auto">
-          <!-- 内置卷帘：载入后即可点/拖定位；灰条=超出音域 -->
-          <local:PianoRoll x:Name="Roll" Grid.Row="0" Height="88" Margin="0,0,0,10"
-                           ToolTip.Tip="点或拖动可定位；播放前先调到要开始的秒数"/>
-          <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto">
+        <Grid RowDefinitions="Auto,Auto,Auto">
+          <!-- 卷帘编辑工具栏 -->
+          <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
+            <TextBlock Text="MIDI 编辑" Classes="sectionLabel" VerticalAlignment="Center"/>
+            <Button x:Name="BtnUndo" Content="撤销" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                    Classes="secondary" Click="Undo_Click" ToolTip.Tip="Ctrl+Z"/>
+            <Button x:Name="BtnRedo" Content="重做" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                    Classes="secondary" Click="Redo_Click" ToolTip.Tip="Ctrl+Y 或 Ctrl+Shift+Z"/>
+            <Button x:Name="BtnDeleteNote" Content="删除所选" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                    Classes="secondary" Click="DeleteNote_Click" ToolTip.Tip="也可以按 Delete 键，或右键点音符"/>
+            <Button x:Name="BtnResetEdits" Content="还原为自动" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                    Classes="secondary" Click="ResetEdits_Click" ToolTip.Tip="丢弃全部手动改动，回到自动提取的结果"/>
+            <CheckBox x:Name="ChkSnap" Content="吸附 0.1s" IsChecked="True" VerticalAlignment="Center"
+                      FontSize="{DynamicResource FontCaption}" IsCheckedChanged="Snap_Changed"
+                      ToolTip.Tip="拖动与加音按 0.1 秒对齐；关掉可以自由摆位"/>
+            <Button x:Name="BtnExportMidi" Content="导出 MIDI…" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                    Classes="secondary" Click="ExportMidi_Click"
+                    ToolTip.Tip="把当前谱面（含你的改动）写成标准 MIDI 文件"/>
+          </StackPanel>
+          <!-- 卷帘：点空白=定位，双击空白=加音，拖音符=移动，拖右缘=改长度，右键=删音 -->
+          <local:PianoRoll x:Name="Roll" Grid.Row="1" Height="140" Margin="0,0,0,10"
+                           ToolTip.Tip="点空白=定位；双击空白=加音；拖音符=移动；拖右缘=改长度；右键=删音"/>
+          <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto">
             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
               <Button x:Name="BtnPlay" Content="▶ 播放 (F6)" Click="BtnPlay_Click"
                       Classes="accent" FontSize="{DynamicResource FontTitle}" Padding="20,8" IsEnabled="False"/>

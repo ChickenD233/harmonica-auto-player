@@ -1328,11 +1328,21 @@ public partial class MainWindow : Window
         PaintCheck(report.Admin, TxtCheckAdminMark, TxtCheckAdmin);
         PaintCheck(report.Ime, TxtCheckImeMark, TxtCheckIme);
 
-        TxtCheckHint.Text = report.AllPassed
-            ? (report.Ime.Detail.Contains("英文模式") ? "输入法：" + report.Ime.Detail + "。" : "")
+        TxtCheckHint.Text = report.HasBlocked
+            ? string.Join("；", new[] { report.Admin, report.Ime }
+                .Where(c => c.Blocked)
+                .Select(c => c.Detail))
             : string.Join("；", new[] { report.Admin, report.Ime }
                 .Where(c => !c.Passed)
                 .Select(c => c.Detail));
+
+        // 输入法状态受系统影响，读不出来时把原始证据写进日志，方便远程排查
+        try
+        {
+            var (_, probe) = PreflightCheck.DetectImeModeDetailed();
+            Persist.LogFile.Append($"[自检] 输入法状态={report.Ime.Status}；{PreflightCheck.Describe(probe)}");
+        }
+        catch { /* 检测失败不影响使用 */ }
     }
 
     /// <summary>手动刷新自检（切换输入法后点一下即可）。</summary>
@@ -1350,14 +1360,24 @@ public partial class MainWindow : Window
     private static readonly Avalonia.Media.IBrush NeutralBrush =
         new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#8A93A0"));   // = BrushTextMuted
 
-    /// <summary>通过打勾、未通过打叉。</summary>
+    /// <summary>通过打勾、提醒打问号、未通过打叉。</summary>
     private static void PaintCheck(PreflightCheck.Check c,
                                    Avalonia.Controls.TextBlock mark,
                                    Avalonia.Controls.TextBlock label)
     {
-        mark.Text = c.Passed ? "✔" : "✘";
-        mark.Foreground = c.Passed ? OkBrush : FailBrush;
-        label.Foreground = c.Passed ? OkBrush : FailBrush;
+        mark.Text = c.Status switch
+        {
+            PreflightCheck.Status.Pass => "✔",
+            PreflightCheck.Status.Warn => "•",
+            _ => "✘"
+        };
+        mark.Foreground = c.Status switch
+        {
+            PreflightCheck.Status.Pass => OkBrush,
+            PreflightCheck.Status.Warn => NeutralBrush,
+            _ => FailBrush
+        };
+        label.Foreground = mark.Foreground;
         label.Text = $"{c.Name}：{c.Detail}";
     }
 

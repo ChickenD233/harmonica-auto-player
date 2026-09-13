@@ -38,6 +38,8 @@ public partial class MainWindow : Window
     private bool _editing;                            // true = 用编辑结果，不再用自动提取
     private bool _helpOn;                             // 卷帘右侧操作说明：默认收起，保持界面干净
     private bool _liveQueued;       // 已排队待应用的实时移调
+    private readonly LivePlayback _livePlay = new();   // MIDI 设备实时演奏（issue #4）
+    private bool _midiStarting;     // 正在后台打开 MIDI 设备
     private IntPtr _gameHwnd;       // 播放期间记住的游戏窗口（用于停止时把焦点还给它）
     private double _removedLeadSec; // “去除开头空拍”实际剪掉的秒数（本轮）
     private readonly AppConfig _cfg;
@@ -88,6 +90,22 @@ public partial class MainWindow : Window
         ChkTrimLead.IsChecked = _cfg.TrimLead;
         ChkAutoMinimize.IsChecked = _cfg.AutoMinimizeOnPlay;
         TimingCombo.SelectedIndex = Math.Clamp(_cfg.TimingIndex, 0, 2);
+
+        // MIDI 设备接入（issue #4）
+        _livePlay.Timing = InputTiming.FromIndex(TimingCombo.SelectedIndex);
+        _livePlay.BaseOctave = Math.Clamp(_cfg.MidiBaseOctave, 1, 6);
+        _livePlay.MinVelocity = Math.Clamp(_cfg.MidiMinVelocity, 1, 127);
+        _livePlay.AutoFit = _cfg.MidiAutoFit;
+        SliderMidiOctave.Value = _livePlay.BaseOctave;
+        SliderMidiVelocity.Value = _livePlay.MinVelocity;
+        ChkMidiAutoFit.IsChecked = _livePlay.AutoFit;
+        ChkMidiLive.IsChecked = false;   // 实时演奏默认关：设置里记住的设备名只用来预选
+        UpdateMidiLabels();
+        MidiInputService.NoteEvent += OnMidiNote;
+        MidiInputService.Error += s => UiPost(() => InsertLog("[MIDI] " + s));
+        _livePlay.Log += s => UiPost(() => InsertLog(s));
+        _livePlay.NoteObserved += OnMidiObserved;
+        RefreshMidiDevices();
 
         _saveDeb = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
         _saveDeb.Tick += (_, _) =>
@@ -357,6 +375,12 @@ public partial class MainWindow : Window
         _cfg.TrimLead = ChkTrimLead.IsChecked == true;
         _cfg.AutoMinimizeOnPlay = ChkAutoMinimize.IsChecked == true;
         _cfg.TimingIndex = Math.Clamp(TimingCombo.SelectedIndex, 0, 2);
+        _cfg.MidiDeviceName = MidiDeviceCombo.SelectedItem as string ?? "";
+        if (_cfg.MidiDeviceName.StartsWith('（')) _cfg.MidiDeviceName = "";
+        _cfg.MidiLiveEnabled = ChkMidiLive.IsChecked == true;
+        _cfg.MidiBaseOctave = (int)Math.Round(SliderMidiOctave.Value);
+        _cfg.MidiMinVelocity = (int)Math.Round(SliderMidiVelocity.Value);
+        _cfg.MidiAutoFit = ChkMidiAutoFit.IsChecked == true;
         _cfg.Save();
     }
 
@@ -1377,6 +1401,7 @@ public partial class MainWindow : Window
         ScheduleSave();
         if (!_uiReady) return;
         var t = InputTiming.FromIndex(TimingCombo.SelectedIndex);
+        _livePlay.Timing = t;
         InsertLog($"输入兼容档位：{t.Name}（帧 {t.FrameMs:F0}ms、修饰键提前 {t.ModLeadMs:F0}ms、" +
                   $"重触发 {t.RetriggerMs:F0}ms）");
     }
@@ -1385,6 +1410,211 @@ public partial class MainWindow : Window
     private void AutoMinimize_Changed(object? sender, RoutedEventArgs e)
     {
         ScheduleSave();
+    }
+
+    // ================= MIDI 设备接入（issue #4） =================
+
+    /// <summary>重新扫描设备并尽量保持当前选择。热插拔后点「刷新」走这里。</summary>
+    private void RefreshMidiDevices()
+    {
+        var names = MidiInputService.ListDevices();
+        string want = MidiInputService.CurrentDeviceName;
+        if (string.IsNullOrEmpty(want)) want = MidiDeviceCombo.SelectedItem as string ?? "";
+        if (string.IsNullOrEmpty(want)) want = _cfg?.MidiDeviceName ?? "";
+
+        var items = new List<string>();
+        if (names.Count == 0) items.Add("（没有检测到 MIDI 设备）");
+        else items.AddRange(names);
+
+        MidiDeviceCombo.ItemsSource = items;
+        int idx = items.IndexOf(want);
+        MidiDeviceCombo.SelectedIndex = idx >= 0 ? idx : (names.Count > 0 ? 0 : 0);
+        MidiDeviceCombo.IsEnabled = names.Count > 0;
+        BtnMidiRefresh.IsEnabled = true;
+        UpdateMidiStatus();
+        UpdateMidiPanels();
+    }
+
+    private void MidiRefresh_Click(object? sender, RoutedEventArgs e)
+    {
+        bool wasLive = ChkMidiLive.IsChecked == true;
+        if (wasLive) StopMidiLive();
+        RefreshMidiDevices();
+        if (wasLive) StartMidiLive();
+        InsertLog($"[MIDI] 已重新扫描：找到 {MidiInputService.ListDevices().Count} 个输入设备。");
+    }
+
+    private void MidiDevice_Changed(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!_uiReady) return;
+        ScheduleSave();
+        if (ChkMidiLive.IsChecked != true) return;
+        // 换了设备：先关旧的，再开新的
+        StopMidiLive();
+        StartMidiLive();
+    }
+
+    private void MidiLive_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (!_uiReady) return;
+        if (ChkMidiLive.IsChecked == true) StartMidiLive();
+        else StopMidiLive();
+        UpdateMidiPanels();
+        ScheduleSave();
+    }
+
+    private void MidiOption_Changed(object? sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        if (!_uiReady) return;
+        _livePlay.BaseOctave = (int)Math.Round(SliderMidiOctave.Value);
+        _livePlay.MinVelocity = (int)Math.Round(SliderMidiVelocity.Value);
+        UpdateMidiLabels();
+        ScheduleSave();
+    }
+
+    private void MidiAutoFit_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (!_uiReady) return;
+        _livePlay.AutoFit = ChkMidiAutoFit.IsChecked == true;
+        ScheduleSave();
+    }
+
+    private void UpdateMidiLabels()
+    {
+        if (TxtMidiOctave != null)
+            TxtMidiOctave.Text = Music.NoteName((_livePlay.BaseOctave + 1) * 12);
+        if (TxtMidiVelocity != null)
+            TxtMidiVelocity.Text = _livePlay.MinVelocity <= 1 ? "1" : _livePlay.MinVelocity.ToString();
+    }
+
+    private void UpdateMidiStatus()
+    {
+        if (TxtMidiStatus == null) return;
+        bool on = ChkMidiLive.IsChecked == true;
+        if (on && MidiInputService.IsListening)
+        {
+            TxtMidiStatus.Text = "实时演奏中";
+            TxtMidiStatus.Foreground = OkBrush;
+        }
+        else if (on)
+        {
+            TxtMidiStatus.Text = "启动中…";
+            TxtMidiStatus.Foreground = NeutralBrush;
+        }
+        else
+        {
+            TxtMidiStatus.Text = MidiInputService.IsListening ? "未启用" : "已停止";
+            TxtMidiStatus.Foreground = NeutralBrush;
+        }
+    }
+
+    /// <summary>
+    /// 有设备才显示「设备 / 刷新 / 状态」这一组控件，没有设备就只留一行说明。
+    /// 选项行只在勾了实时演奏时才出现，避免默认状态下多出两行用不到的东西。
+    /// </summary>
+    private void UpdateMidiPanels()
+    {
+        bool hasDevice = MidiInputService.ListDevices().Count > 0;
+        if (PanelMidiControls != null) PanelMidiControls.IsVisible = hasDevice;
+        if (TxtMidiNoDevice != null) TxtMidiNoDevice.IsVisible = !hasDevice;
+        if (PanelMidiOptions != null) PanelMidiOptions.IsVisible = hasDevice && ChkMidiLive.IsChecked == true;
+    }
+
+    private void StartMidiLive()
+    {
+        string name = MidiDeviceCombo.SelectedItem as string ?? "";
+        if (string.IsNullOrEmpty(name) || name.StartsWith('（'))
+        {
+            InsertLog("[MIDI] 没有可用设备。接上设备后点「刷新」。");
+            ChkMidiLive.IsChecked = false;
+            UpdateMidiStatus();
+            return;
+        }
+
+        _livePlay.Timing = InputTiming.FromIndex(TimingCombo.SelectedIndex);
+        _livePlay.BaseOctave = (int)Math.Round(SliderMidiOctave.Value);
+        _livePlay.MinVelocity = (int)Math.Round(SliderMidiVelocity.Value);
+        _livePlay.AutoFit = ChkMidiAutoFit.IsChecked == true;
+        _livePlay.Start();
+        UpdateMidiStatus();
+
+        if (_midiStarting) return;
+        _midiStarting = true;
+        _ = MidiInputService.StartAsync(name).ContinueWith(t =>
+        {
+            bool ok = t.IsCompletedSuccessfully && t.Result;
+            UiPost(() =>
+            {
+                _midiStarting = false;
+                if (ok)
+                {
+                    InsertLog($"[MIDI] 已接入设备「{name}」。按键会直接吹进游戏，音符范围 "
+                              + $"{Music.NoteName(LivePlayback.PlayableRange(_livePlay.BaseOctave).Lo)} ~ "
+                              + $"{Music.NoteName(LivePlayback.PlayableRange(_livePlay.BaseOctave).Hi)}。");
+                }
+                else
+                {
+                    InsertLog($"[MIDI] 打开设备「{name}」失败，实时演奏已关闭。");
+                    ChkMidiLive.IsChecked = false;
+                    _livePlay.Stop();
+                }
+                UpdateMidiStatus();
+            });
+        }, TaskScheduler.Default);
+    }
+
+    private void StopMidiLive()
+    {
+        bool wasListening = MidiInputService.IsListening;
+        MidiInputService.Stop();
+        _livePlay.Stop();
+        UpdateMidiStatus();
+        UpdateMidiPanels();
+        if (!wasListening) return;
+        InsertLog($"[MIDI] 实时演奏已停止（本次收到 {_livePlay.NoteOnCount} 个音，"
+                  + $"超音域 {_livePlay.OutOfRangeCount}，顶音 {_livePlay.StolenCount}，"
+                  + $"太短补足 {_livePlay.TooShortCount}）。");
+    }
+
+    /// <summary>设备事件在设备线程上触发：只做转发，界面更新交给 <see cref="OnMidiObserved"/>。</summary>
+    private void OnMidiNote(int pitch, int velocity, bool down)
+    {
+        if (down) _livePlay.NoteOn(pitch, velocity);
+        else _livePlay.NoteOff(pitch);
+    }
+
+    /// <summary>实时演奏时把最近一个音显示在状态行上，方便确认设备真的通了。</summary>
+    private void OnMidiObserved(LiveMapping map, int pitch, int velocity)
+    {
+        if (ChkMidiLive.IsChecked != true) return;
+        string text = map.Playable
+            ? $"[MIDI] {Music.NoteName(pitch)} → {KeyLabelOf(map)}"
+            : $"[MIDI] {Music.NoteName(pitch)} → 超出音域";
+        UiPost(() => UpdateMidiStatus(text));
+    }
+
+    private void UpdateMidiStatus(string note)
+    {
+        if (TxtMidiStatus == null) return;
+        TxtMidiStatus.Text = MidiInputService.IsListening ? note : "未启用";
+        TxtMidiStatus.Foreground = MidiInputService.IsListening ? OkBrush : NeutralBrush;
+    }
+
+    private static string KeyLabelOf(LiveMapping map)
+    {
+        string key = map.Key switch
+        {
+            LiveKey.MouseLeft => "按住左键",
+            LiveKey.MouseRight => "按住右键",
+            LiveKey.MouseSharp => "按住中键",
+            LiveKey.Comma => "，",
+            _ => ((char)('Z' + (int)map.Key)).ToString()
+        };
+        var parts = new List<string> { key };
+        if (map.Low) parts.Add("+左键");
+        if (map.High) parts.Add("+右键");
+        if (map.Sharp) parts.Add("+中键");
+        return string.Join("", parts);
     }
 
     /// <summary>刷新需选中声轨才能用的按钮（一键移调、导出），播放中也能导出。</summary>
@@ -1844,6 +2074,8 @@ public partial class MainWindow : Window
         _preview?.Dispose();
         _preview = null;
         Input.GlobalHotkeys.Stop();
+        MidiInputService.Stop();
+        _livePlay.Dispose();
         _tray?.Dispose();
         _tray = null;
         ForceReleaseKeysForGame();

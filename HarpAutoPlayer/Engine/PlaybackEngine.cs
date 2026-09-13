@@ -101,10 +101,20 @@ public sealed class PlaybackEngine : IDisposable
         }
         finally { Timing = saved; }
     }
+
+    /// <summary>仅供时序回归测试使用：调度决策追踪输出口（null = 不追踪）。</summary>
+    public static Action<string>? TraceSink;
 #endif
 
     /// <summary>本轮播放的输入时序诊断（由 Execute 在派发时统计）。</summary>
     public InputTimingProbe Probe { get; } = new();
+
+    /// <summary>
+    /// 本轮"没能成音"的音符数：按键时值被压到一个帧点都盖不住，游戏读不到。
+    /// 修复后正常曲子应为 0。不是 0 就说明这首谱面挤得比输入档位允许的最快速度还快，
+    /// 用户可以换「稳健」档或把速度降一点。
+    /// </summary>
+    public int SqueezedNotes => Probe.MinUpLimited;
 
     /// <summary>对外暴露的调度事件（音乐时间，秒）。用于导出按键表/宏，保证与实际演奏一致。</summary>
     public sealed record ScheduledEvent(double MusicTime, string Kind, char Key, bool Down)
@@ -513,7 +523,12 @@ public sealed class PlaybackEngine : IDisposable
     /// 把"松开前音 + 八度键 + 中键 + 本音按下"全挤在 20ms 内，游戏按帧采样时整簇被折叠、
     /// 排在末尾的音键被吃掉 → 漏音。本实现所有最小间隔改用 InputTiming 的**物理毫秒**：
     /// 修饰键比音键早 ModLeadMs 且音键至少晚一帧；同键两次按下 ≥ RetriggerMs；
-    /// 按住时长 ≥ MinHoldMs；前音抬起→后音按下 ≥ ReleaseGapMs。
+    /// 每次按下至少按住一帧。
+    ///
+    /// 音符之间用**槽位**排开，而不是只靠"前音抬起 → 后音按下"的间隔：
+    /// 与前音重叠（含同刻起音）的音顺延到前音之后，时值不变。口琴是单音乐器，
+    /// 同刻起音本来只能吹响一个；靠"缩短前音"去腾位置，就会产生零时长按键 ——
+    /// 游戏按帧采样时一帧都读不到，整段音被吃掉。
     /// </summary>
     private (List<PhysicalEvent>, double) BuildSchedule(
         IReadOnlyList<MappedNote> notes, ModState startMods)
@@ -530,8 +545,10 @@ public sealed class PlaybackEngine : IDisposable
         double modLead = Math.Max(Timing.ModLeadMs / 1000.0, frame);   // 修饰键至少提前一帧
         // 重触发间隔：至少要跨过"抬起被采样到"的那一帧，同时不小于配置值
         double retrig = Math.Max(Timing.RetriggerMs / 1000.0, frame);
-        double minHold = Math.Max(Timing.MinHoldMs / 1000.0, frame);   // 最短按住至少一帧
-        double relGap = Math.Max(Timing.ReleaseGapMs / 1000.0, frame); // 抬起→按下至少一帧
+        // 最短按住时刻：比一帧再多一点余量。
+        // 只有刚好一帧时，若按下刚好落在帧边界上，整个按住区间可能一个帧点都不含 → 游戏读不到。
+        // 加 1ms 余量后，区间内一定落得进至少一个帧点。
+        double minUpT = frame + 0.001;
 
         // —— 修饰键状态机（起点 = 游戏侧当前真实状态）——
         Slot heldSlot = startMods.L ? Slot.Low : startMods.R ? Slot.High : Slot.Mid;
@@ -572,19 +589,33 @@ public sealed class PlaybackEngine : IDisposable
         }
 
         char? heldKey = null;
-        double heldDownT = 0;      // 前音按下时刻
-        double heldEndT = 0;       // 前音谱面结束时刻（用于保时值）
+        double heldDownT = 0;      // 前音实际按下时刻
+        double heldUpT = 0;        // 前音实际抬起时刻
         var lastDown = new Dictionary<char, double>();
+
+        // 槽位起点：本音必须晚于上一个音（口琴是单音），槽位终点 = 前音实际抬起时刻。
+        double slotStart = 0;
 
         foreach (var n in ordered)
         {
-            double t = Math.Max(0, n.Start);
-            double endT = Math.Max(t, n.End);      // 谱面结束时刻（保留原时值）
+            double baseStart = Math.Max(0, n.Start);
+            double endT = Math.Max(baseStart, n.End);      // 谱面结束时刻（保留原时值）
+            double duration = endT - baseStart;
+
+            // ① 本音最早能按下的时刻：
+            //    - baseStart：谱面时刻（不与前音重叠时完全按原谱）
+            //    - slotStart：前音实际抬起时刻（口琴是单音，重叠音必须排开）
+            //    - 前音按下 + minUpT：保证前音能跨过一个帧点，被游戏采样到。
+            //      少了这条，紧随其后的音就会把前音的时值压成 0 → 游戏整段读不到 → 漏音。
+            double t = Math.Max(baseStart, slotStart);
+            if (heldKey != null && t < heldDownT + minUpT) t = heldDownT + minUpT;
+            endT = t + duration;
+
             bool wantL = n.OctaveSlot == Slot.Low;
             bool wantR = n.OctaveSlot == Slot.High;
             bool wantM = n.Sharp;
 
-            // ① 同一根音键的重触发间隔（旧版只给 12ms，短于一帧 → 两音粘连）
+            // ② 同一根音键的重触发间隔（旧版只给 12ms，短于一帧 → 两音粘连）
             double downT = t;
             if (lastDown.TryGetValue(n.Key, out double prevDown) && downT < prevDown + retrig)
                 downT = prevDown + retrig;
@@ -598,21 +629,20 @@ public sealed class PlaybackEngine : IDisposable
                 downT = Math.Max(t, Math.Min(endT, prevDown + effRetrig));
             }
 
-            // ② 前音必须先抬起，且"抬起 → 按下"间隔足够被游戏采样到（同时保时值）
+            // ③ 前音抬起：最早是它的谱面结束时刻，最晚是本音按下时刻。
+            //    ①保证了这个区间至少跨过一个帧点，所以不会再出现 upT == downT 的零时长按键。
             if (heldKey is char prev)
             {
-                double upT = Math.Min(heldEndT, downT - relGap);
-                if (upT < heldDownT + minHold)
-                {
-                    upT = (heldDownT + minHold <= downT - 0.001)
-                        ? heldDownT + minHold          // 还来得及按够最短时长
-                        : Math.Max(heldDownT, downT - 0.001);   // 来不及就直接换音
-                }
+                double upT = Math.Min(heldUpT, downT);
+                upT = Math.Min(downT, Math.Max(upT, heldDownT + minUpT));   // 至少跨一个帧点，且不越过本音
+                if (upT < heldUpT - 1e-9) Probe.OnMinUpLimited();
+
                 evs.Add(new PhysicalEvent(upT, K_Key, prev, false, ""));
+                if (upT > slotStart) slotStart = upT;
                 heldKey = null;
             }
 
-            // ③ 修饰键切换：提前 modLead 发出，并保证音键至少晚于一帧
+            // ④ 修饰键切换：提前 modLead 发出，并保证音键至少晚于一帧
             if (wantL != (heldSlot == Slot.Low) ||
                 wantR != (heldSlot == Slot.High) ||
                 wantM != heldSharp)
@@ -624,17 +654,31 @@ public sealed class PlaybackEngine : IDisposable
                 if (downT < modT + frame) downT = modT + frame;
             }
 
+            // ⑤ 修饰键提前量若把本音按下推后了，整段跟着后移，时值不变。
+            //    不能只推按下不推抬起：那会把时值压没，又变成零时长按键。
+            if (downT > t)
+            {
+                double shift = downT - t;
+                t += shift;
+                endT += shift;
+            }
+
             evs.Add(new PhysicalEvent(downT, K_Key, n.Key, true,
                 NoteMapper.Describe(n, withTime: false)));
+#if HARP_TEST
+            TraceSink?.Invoke($"  音 {n.Key} 谱面 {baseStart:F4}→{baseStart + duration:F4} 槽位 {t:F4}→{endT:F4} "
+                              + $"实发 down={downT:F4}"
+                              + $"{(lastDown.ContainsKey(n.Key) ? $" prevDown={lastDown[n.Key]:F4}" : "")}");
+#endif
             heldKey = n.Key;
             heldDownT = downT;
-            heldEndT = endT;
+            heldUpT = endT;
             lastDown[n.Key] = downT;
         }
 
         if (heldKey is char last)
         {
-            double upT = Math.Max(heldEndT, heldDownT + minHold);
+            double upT = Math.Max(heldUpT, heldDownT + minUpT);
             evs.Add(new PhysicalEvent(upT, K_Key, last, false, ""));
         }
 

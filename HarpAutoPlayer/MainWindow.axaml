@@ -314,8 +314,65 @@
         </Grid>
       </Border>
 
-      <!-- 选项区：分三行，避免一个 WrapPanel 里堆十几个控件 -->
+      <!-- 选项区：分四行，避免一个 WrapPanel 里堆十几个控件 -->
       <StackPanel Grid.Row="2" Spacing="10" Margin="{DynamicResource CardGap}">
+
+        <!-- 第 1 行：MIDI 设备接入。演奏中这一行用不到，所以放最上面，
+             勾了「实时演奏」就直接开着；不勾不影响任何文件播放功能。 -->
+        <Border Classes="card" Padding="14,10">
+          <StackPanel Spacing="6">
+            <WrapPanel ItemSpacing="18" LineSpacing="8">
+              <CheckBox x:Name="ChkMidiLive" Content="MIDI 设备实时演奏" FontSize="{DynamicResource FontSmall}"
+                        VerticalAlignment="Center"
+                        ToolTip.Tip="接上 MIDI 键盘或打击垫，按键直接吹进游戏。不勾选时本程序完全不碰这个设备"
+                        IsCheckedChanged="MidiLive_Changed"/>
+
+              <StackPanel x:Name="PanelMidiControls" Orientation="Horizontal" Spacing="14"
+                          IsVisible="False" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Text="设备" Classes="label" MinWidth="34"/>
+                  <ComboBox x:Name="MidiDeviceCombo" Width="190" FontSize="{DynamicResource FontSmall}"
+                            VerticalAlignment="Center" SelectionChanged="MidiDevice_Changed"
+                            ToolTip.Tip="系统里的 MIDI 输入设备。热插拔后点右边「刷新」"/>
+                  <Button x:Name="BtnMidiRefresh" Content="刷新" FontSize="{DynamicResource FontSmall}"
+                          Padding="10,5" Classes="secondary" VerticalAlignment="Center"
+                          Click="MidiRefresh_Click" ToolTip.Tip="重新扫描 MIDI 输入设备"/>
+                </StackPanel>
+                <TextBlock x:Name="TxtMidiStatus" Text="未启用" Classes="value" VerticalAlignment="Center"
+                           Foreground="{DynamicResource BrushTextSecondary}"/>
+              </StackPanel>
+
+              <TextBlock x:Name="TxtMidiNoDevice" FontSize="{DynamicResource FontSmall}"
+                         VerticalAlignment="Center" Foreground="{DynamicResource BrushTextSecondary}"
+                         Text="没有检测到 MIDI 设备。接上键盘或打击垫后点「刷新」。"/>
+            </WrapPanel>
+
+            <WrapPanel x:Name="PanelMidiOptions" ItemSpacing="18" LineSpacing="8" IsVisible="False">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="基准八度" Classes="label" MinWidth="56"
+                           ToolTip.Tip="口琴中音 do 所在的八度。设备上弹这个八度的 do 就是游戏里的中音 do"/>
+                <Slider x:Name="SliderMidiOctave" Width="110" Minimum="1" Maximum="6" Value="4"
+                        TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                        ValueChanged="MidiOption_Changed"/>
+                <TextBlock x:Name="TxtMidiOctave" Text="C4" Classes="value" Width="52"/>
+              </StackPanel>
+
+              <CheckBox x:Name="ChkMidiAutoFit" Content="自动贴合音域" FontSize="{DynamicResource FontSmall}"
+                        IsChecked="True" VerticalAlignment="Center"
+                        ToolTip.Tip="按最近弹过的音自动挑基准八度。设备跨几个八度弹时，低音不会因为超出音域而不响"
+                        IsCheckedChanged="MidiAutoFit_Changed"/>
+
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="力度下限" Classes="label" MinWidth="56"
+                           ToolTip.Tip="低于这个力度的音忽略。设备有抖动或触后噪声时调高"/>
+                <Slider x:Name="SliderMidiVelocity" Width="110" Minimum="1" Maximum="127" Value="1"
+                        TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                        ValueChanged="MidiOption_Changed"/>
+                <TextBlock x:Name="TxtMidiVelocity" Text="1" Classes="value" Width="30"/>
+              </StackPanel>
+            </WrapPanel>
+          </StackPanel>
+        </Border>
 
         <!-- 第 1 行：演奏参数 -->
         <Border Classes="card" Padding="14,10">

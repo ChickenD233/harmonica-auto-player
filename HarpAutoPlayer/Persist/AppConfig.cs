@@ -18,6 +18,13 @@ public sealed class AppConfig
     public int TimingIndex { get; set; } = 1;         // 输入兼容档位：0稳健/1标准/2极限
     public string SkippedUpdateTag { get; set; } = "";   // 用户选择“跳过”的版本号（空=不跳过）
 
+    // —— MIDI 设备接入（issue #4）——
+    public string MidiDeviceName { get; set; } = "";     // 上次用的 MIDI 输入设备名（空=没选过）
+    public bool MidiLiveEnabled { get; set; } = false;   // 设备实时演奏开关（默认关，避免误触发）
+    public int MidiBaseOctave { get; set; } = 4;         // 基准八度（口琴中音 do 所在的 MIDI 八度）
+    public int MidiMinVelocity { get; set; } = 1;        // 力度下限（1 = 不过滤）
+    public bool MidiAutoFit { get; set; } = true;        // 自动贴合音域
+
     private static string DirPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HarpAutoPlayer");
 

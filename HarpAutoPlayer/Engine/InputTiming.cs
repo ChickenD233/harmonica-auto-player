@@ -86,6 +86,12 @@ public sealed class InputTimingProbe
     public int MinHoldTooShort { get; private set; }    // 音键按住时长不足一帧
     public double MinModLeadMs { get; private set; } = double.MaxValue;
 
+    /// <summary>音符挤得连"最短按住"都放不下、时值被压缩的音数（正常曲子为 0）。</summary>
+    public int MinUpLimited { get; private set; }
+
+    /// <summary>调度阶段报告：前音为了让位给后音，时值被压到了下限。</summary>
+    public void OnMinUpLimited() => MinUpLimited++;
+
     /// <summary>修饰键状态变化（按音乐时间记录）。</summary>
     public void OnModifier(double musicT, bool down)
     {
@@ -155,6 +161,7 @@ public sealed class InputTimingProbe
                    $"修饰键提前量<16.7ms 的 {ModLeadTooShort} 个（同刻 {ModLeadZero} 个）；" +
                    $"同键重触发<45ms 的 {RetriggerTooShort} 个；" +
                    $"按住<16.7ms 的 {MinHoldTooShort} 个；" +
+                   $"时值被压到下限的 {MinUpLimited} 个；" +
                    $"最小修饰键提前量 {minLead:F1}ms";
         }
     }

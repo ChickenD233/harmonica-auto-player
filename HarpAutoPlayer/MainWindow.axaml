@@ -481,14 +481,14 @@
                     <TextBlock x:Name="TxtCheckAdmin" Text="管理员" FontSize="{DynamicResource FontSmall}" VerticalAlignment="Center"/>
                   </StackPanel>
                   <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center"
-                              ToolTip.Tip="中文/日文输入法会截走按键（尤其拼音未上屏时），请切到英文">
+                              ToolTip.Tip="只有输入法开着并且处于中文/假名输入状态时才会截走按键。中文键盘布局切到英文模式可以直接用，不会误报">
                     <TextBlock x:Name="TxtCheckImeMark" Text="–" FontSize="{DynamicResource FontBody}" FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMuted}" VerticalAlignment="Center"/>
                     <TextBlock x:Name="TxtCheckIme" Text="输入法" FontSize="{DynamicResource FontSmall}" VerticalAlignment="Center"/>
                   </StackPanel>
                   <Button x:Name="BtnRecheck" Content="刷新" FontSize="{DynamicResource FontCaption}" Padding="10,3"
                           Classes="secondary" VerticalAlignment="Center" Click="BtnRecheck_Click"
-                          ToolTip.Tip="重新检测管理员权限与当前输入法（切换输入法后点一下即可）"/>
+                          ToolTip.Tip="重新检测管理员权限与输入法状态（切换中英文模式后点一下即可）"/>
                 </WrapPanel>
                 <TextBlock x:Name="TxtCheckHint" Classes="caption" Foreground="{DynamicResource BrushWarn}"
                            TextWrapping="Wrap"/>

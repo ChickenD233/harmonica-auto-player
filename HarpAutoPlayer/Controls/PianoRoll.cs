@@ -43,6 +43,8 @@ public sealed class PianoRoll : Control
     private HashSet<int> _inRange = new();
     private double _total;
     private double _position;
+    /// <summary>谱面时间 → 卷帘时间轴的比例（默认 1，试听时按实际总长设置）。</summary>
+    private double _playheadScale = 1.0;
     /// <summary>「去除开头空拍」剪掉的前奏秒数（0 = 未剪或该选项关闭）。</summary>
     private double _trimmedLead;
 
@@ -194,13 +196,28 @@ public sealed class PianoRoll : Control
 
     public void SetPosition(double seconds)
     {
-        double v = Math.Clamp(seconds, 0, _total);
+        // 传进来的秒数是"谱面时间"；乘上播放头比例换算成卷帘的时间轴。
+        // 试听时卷帘时间轴比谱面末音长一点（留了右键余量），比例就是两者之比；
+        // 不算这一步，播放头会以 2% 左右的偏差慢慢落后于音符（越放越明显）。
+        double v = Math.Clamp(seconds * _playheadScale, 0, _total);
         if (Math.Abs(v - _position) > 0.0005)
         {
             _position = v;
             InvalidateVisual();
         }
         ApplyFollow();
+    }
+
+    /// <summary>
+    /// 设置"谱面时间 → 卷帘时间轴"的比例。默认 1（卷帘与谱面同一时间轴）。
+    /// 试听时传入 末音秒数 / 卷帘总长，让播放头与音符严格对齐。
+    /// </summary>
+    public void SetPlayheadScale(double scale)
+    {
+        double v = scale > 0.05 && scale < 20 ? scale : 1.0;
+        if (Math.Abs(v - _playheadScale) < 1e-9) return;
+        _playheadScale = v;
+        InvalidateVisual();
     }
 
     // ================= 视口 =================

@@ -805,6 +805,15 @@ public partial class MainWindow : Window
         _previewTimer.Tick += (_, _) => PreviewTick();
         _previewTimer.Start();
 
+        // 试听也是"在播放"：让卷帘自动跟随播放头。少了这句，视口不滚动，
+        // 播放头很快就跑出画面，看起来就像"画面停在原地、声音已经走远"。
+        if (Roll != null)
+        {
+            Roll.IsPlaying = true;
+            // 卷帘时间轴比谱面末音长一点（留了右键余量）：换算比例，让播放头与音符严格对齐。
+            Roll.SetPlayheadScale(_previewTotal > 0 ? PreviewTotalSeconds / _previewTotal : 1.0);
+        }
+
         InsertLog($"试听开始：{notes.Count} 个音，约 {_previewTotal:F1}s（不发送按键）");
     }
 
@@ -855,6 +864,12 @@ public partial class MainWindow : Window
         _previewSounding.Clear();
         _preview?.StopAll();
         if (BtnPreview != null) BtnPreview.Content = "试听";
+        // 试听结束就不再跟随播放头（演奏中的状态由 UpdateTransportUi 负责）
+        if (Roll != null && _engine is not { IsRunning: true })
+        {
+            Roll.IsPlaying = false;
+            Roll.SetPlayheadScale(1.0);
+        }
     }
 
     private void ResetEdits_Click(object? sender, RoutedEventArgs e)
@@ -1314,7 +1329,7 @@ public partial class MainWindow : Window
         PaintCheck(report.Ime, TxtCheckImeMark, TxtCheckIme);
 
         TxtCheckHint.Text = report.AllPassed
-            ? ""
+            ? (report.Ime.Detail.Contains("英文模式") ? "输入法：" + report.Ime.Detail + "。" : "")
             : string.Join("；", new[] { report.Admin, report.Ime }
                 .Where(c => !c.Passed)
                 .Select(c => c.Detail));

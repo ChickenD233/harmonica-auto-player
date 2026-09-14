@@ -1,0 +1,440 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:GameInstrumentPlayer"
+        x:Class="GameInstrumentPlayer.MainWindow"
+        Title="MIDI 转游戏乐器演奏器"
+        Width="1140" Height="820"
+        MinWidth="1000" MinHeight="700"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource BrushCanvas}"
+        FontFamily="{DynamicResource FontUi}"
+        Closing="OnClosing">
+
+  <Window.Styles>
+    <!-- 文字色写死为深色，避免系统深色/高对比主题下白字白底看不见。
+         带 class 的规则必须排在全量规则之后，否则会被盖掉。 -->
+    <Style Selector="Window">
+      <Setter Property="Foreground" Value="{DynamicResource BrushText}"/>
+    </Style>
+    <Style Selector="Window TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource BrushText}"/>
+    </Style>
+    <Style Selector="Window Button">
+      <Setter Property="Foreground" Value="{DynamicResource BrushText}"/>
+    </Style>
+    <Style Selector="Window CheckBox">
+      <Setter Property="Foreground" Value="{DynamicResource BrushText}"/>
+    </Style>
+    <!-- 弱化文字角色 -->
+    <Style Selector="Window TextBlock.sectionLabel">
+      <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}"/>
+    </Style>
+    <Style Selector="Window TextBlock.caption">
+      <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+    </Style>
+    <Style Selector="Window TextBlock.value">
+      <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+    </Style>
+    <!-- 主按钮上的白字 -->
+    <Style Selector="Window Button.accent">
+      <Setter Property="Foreground" Value="{DynamicResource BrushOnAccent}"/>
+    </Style>
+  </Window.Styles>
+
+  <Grid>
+
+    <!-- 左：文件/轨道；右：演奏控制 -->
+    <DockPanel Margin="14">
+
+    <!-- 最近一条消息。完整历史仍然写进 %LOCALAPPDATA%\GameInstrumentPlayer\play.log。 -->
+    <Border DockPanel.Dock="Bottom" Margin="0,6,0,0" Padding="10,4" CornerRadius="8"
+            Background="{DynamicResource BrushSurfaceAlt}">
+      <TextBlock x:Name="TxtLastMsg" FontSize="{DynamicResource FontCaption}"
+                 Foreground="{DynamicResource BrushTextSecondary}"
+                 TextTrimming="CharacterEllipsis" Text="就绪"/>
+    </Border>
+
+    <!-- 免责声明，点击关闭 -->
+    <Border DockPanel.Dock="Bottom" Margin="0,12,0,0" Background="{DynamicResource BrushDangerSoft}"
+            BorderBrush="{DynamicResource BrushDangerBorder}" BorderThickness="1" CornerRadius="10" Padding="12,8"
+            PointerPressed="Disclaimer_PointerPressed" Cursor="Hand">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource FontSmall}"
+                   Foreground="{DynamicResource BrushDangerText}" VerticalAlignment="Center">
+          <Run FontWeight="Bold" Text="⚠ "/><Run Text="虚拟输入可能违反游戏规则，风险自负。请只在练习、单人、自定义房间使用"/>
+        </TextBlock>
+        <TextBlock Grid.Column="1" Text="✕" FontSize="{DynamicResource FontSmall}"
+                   Foreground="{DynamicResource BrushDangerText}" Opacity="0.7"
+                   Margin="12,0,2,0" VerticalAlignment="Center"/>
+      </Grid>
+    </Border>
+
+    <!-- ================= 左栏：文件 → 轨道 ================= -->
+    <Grid Width="450" RowDefinitions="Auto,*,Auto" DockPanel.Dock="Left" Margin="0,0,12,0">
+
+      <Border Grid.Row="0" Classes="card">
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
+          <!-- 首要操作，给足视觉重量 -->
+          <Button x:Name="BtnOpen" Content="打开 MIDI 文件…" Click="BtnOpen_Click"
+                  Classes="accent" Padding="14,7" FontSize="{DynamicResource FontBody}"/>
+          <TextBlock Grid.Column="1" x:Name="LblFile" VerticalAlignment="Center"
+                     Margin="12,0,0,0" Text="未选择文件" Classes="caption"
+                     TextTrimming="CharacterEllipsis"/>
+          <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Classes="sectionLabel" Margin="0,8,0,0"
+                     Text="支持 .mid / .midi / .kar / .rmi"/>
+        </Grid>
+      </Border>
+
+      <Border Grid.Row="1" Classes="card" Margin="{DynamicResource CardGap}" Padding="0">
+        <Grid RowDefinitions="Auto,*">
+          <!-- 列头 -->
+          <Border Classes="tableHead">
+            <Grid ColumnDefinitions="22,24,28,62,*,56,42,70">
+              <TextBlock Text="" FontSize="{DynamicResource FontMicro}"/>
+              <TextBlock Grid.Column="1" Text="合" FontSize="{DynamicResource FontCaption}" Classes="sectionLabel"
+                         Padding="2,7" FontWeight="SemiBold"
+                         ToolTip.Tip="勾选多个声部一起演奏。编号=优先级，小的先"/>
+              <TextBlock Grid.Column="2" Text="轨" FontSize="{DynamicResource FontCaption}" Classes="sectionLabel"
+                         Padding="4,7" FontWeight="SemiBold"/>
+              <TextBlock Grid.Column="3" Text="声道" FontSize="{DynamicResource FontCaption}" Classes="sectionLabel"
+                         Padding="4,7" FontWeight="SemiBold"/>
+              <TextBlock Grid.Column="4" Text="名称" FontSize="{DynamicResource FontCaption}" Classes="sectionLabel"
+                         Padding="4,7" FontWeight="SemiBold"/>
+              <TextBlock Grid.Column="5" Text="时长" FontSize="{DynamicResource FontCaption}" Classes="sectionLabel"
+                         Padding="4,7" FontWeight="SemiBold"/>
+              <TextBlock Grid.Column="6" Text="音符" FontSize="{DynamicResource FontCaption}" Classes="sectionLabel"
+                         Padding="4,7" FontWeight="SemiBold"/>
+              <TextBlock Grid.Column="7" Text="音域" FontSize="{DynamicResource FontCaption}" Classes="sectionLabel"
+                         Padding="4,7" FontWeight="SemiBold"/>
+            </Grid>
+          </Border>
+          <Grid Grid.Row="1">
+            <ListBox x:Name="TrackList" SelectionMode="Single" Background="Transparent"
+                     SelectionChanged="TrackList_SelectionChanged">
+              <ListBox.Styles>
+                <!-- 打击乐等不适合当旋律的轨道整行禁用 -->
+                <Style Selector="ListBoxItem">
+                  <Setter Property="IsEnabled" Value="{Binding IsPlayable}"/>
+                </Style>
+              </ListBox.Styles>
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <Grid ColumnDefinitions="22,24,28,62,*,56,42,70" MinHeight="30">
+                    <TextBlock Text="{Binding MixRank}" FontSize="{DynamicResource FontMicro}" Foreground="{DynamicResource BrushInfoText}"
+                               FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               IsVisible="{Binding IsMix}"/>
+                    <TextBlock Text="●" FontSize="{DynamicResource FontMicro}" Foreground="{DynamicResource BrushAccent}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               IsVisible="{Binding ShowStar}"/>
+                    <CheckBox Grid.Column="1" IsChecked="{Binding IsMix}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                              Checked="Mix_Changed" Unchecked="Mix_Changed"
+                              ToolTip.Tip="勾选加入合奏，顺序就是编号"/>
+                    <TextBlock Grid.Column="2" Text="{Binding TrackLabel}" VerticalAlignment="Center"
+                               Padding="4,3" FontSize="{DynamicResource FontSmall}"/>
+                    <TextBlock Grid.Column="3" Text="{Binding ChannelLabel}" VerticalAlignment="Center"
+                               Padding="4,3" FontSize="{DynamicResource FontSmall}"/>
+                    <TextBlock Grid.Column="4" Text="{Binding DisplayName}" VerticalAlignment="Center"
+                               Padding="4,3" FontSize="{DynamicResource FontSmall}" TextTrimming="CharacterEllipsis"
+                               FontWeight="{Binding NameWeight}"
+                               ToolTip.Tip="{Binding DisplayName}"/>
+                    <TextBlock Grid.Column="5" Text="{Binding DurationText}" VerticalAlignment="Center"
+                               Padding="4,3" FontSize="{DynamicResource FontCaption}" Classes="sectionLabel"/>
+                    <TextBlock Grid.Column="6" Text="{Binding NoteCount}" VerticalAlignment="Center"
+                               Padding="4,3" FontSize="{DynamicResource FontSmall}" HorizontalAlignment="Center"/>
+                    <TextBlock Grid.Column="7" Text="{Binding RangeLabel}" VerticalAlignment="Center"
+                               Padding="4,3" FontSize="{DynamicResource FontSmall}"/>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <!-- 空状态引导 -->
+            <TextBlock x:Name="EmptyHint" IsVisible="True"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       TextAlignment="Center" TextWrapping="Wrap" Margin="24"
+                       Classes="caption" LineHeight="22"
+                       Text="还没有载入曲目&#x0a;点「打开 MIDI 文件…」选一首，再点一行作为主旋律"/>
+          </Grid>
+        </Grid>
+      </Border>
+      <!-- 左下方空着可惜：放「输入兼容」和「播放前自检」 -->
+      <Border Grid.Row="2" Classes="card" Margin="{DynamicResource CardGap}" Padding="12,10"
+              Background="{DynamicResource BrushSurfaceAlt}">
+        <StackPanel Spacing="8">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="输入兼容" Classes="label" VerticalAlignment="Center"
+                       ToolTip.Tip="游戏按帧读按键，修饰键与琴键间隔太短会被折进同一帧，导致漏音。这里给时间余量。"/>
+            <ComboBox x:Name="TimingCombo" Width="170" FontSize="{DynamicResource FontSmall}"
+                      VerticalAlignment="Center" SelectionChanged="Timing_Changed"
+                      ToolTip.Tip="稳健=掉帧留余量；方案默认=按当前乐器方案的数值；极限=高帧率跟快歌。仍漏音就选稳健"/>
+          </StackPanel>
+          <WrapPanel ItemSpacing="16" LineSpacing="6">
+            <TextBlock Text="播放前自检" Classes="sectionLabel" VerticalAlignment="Center"/>
+            <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center"
+                        ToolTip.Tip="游戏以管理员运行时，本程序也要以管理员运行，否则按键被拦截">
+              <TextBlock x:Name="TxtCheckAdminMark" Text="–" FontSize="{DynamicResource FontBody}" FontWeight="Bold"
+                         Foreground="{DynamicResource BrushTextMuted}" VerticalAlignment="Center"/>
+              <TextBlock x:Name="TxtCheckAdmin" Text="管理员" FontSize="{DynamicResource FontSmall}" VerticalAlignment="Center"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center"
+                        ToolTip.Tip="输入法会截走按键，请切到英文">
+              <TextBlock x:Name="TxtCheckImeMark" Text="–" FontSize="{DynamicResource FontBody}" FontWeight="Bold"
+                         Foreground="{DynamicResource BrushTextMuted}" VerticalAlignment="Center"/>
+              <TextBlock x:Name="TxtCheckIme" Text="输入法" FontSize="{DynamicResource FontSmall}" VerticalAlignment="Center"/>
+            </StackPanel>
+            <Button x:Name="BtnRecheck" Content="刷新" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                    Classes="secondary" VerticalAlignment="Center" Click="BtnRecheck_Click"
+                    ToolTip.Tip="重新检测。切换输入法后点一下"/>
+          </WrapPanel>
+          <TextBlock x:Name="TxtCheckHint" Classes="caption" Foreground="{DynamicResource BrushWarn}"
+                     TextWrapping="Wrap"/>
+        </StackPanel>
+      </Border>
+    </Grid>
+
+    <!-- ================= 右栏：演奏 ================= -->
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+
+      <!-- 更新提示条 + 主旋律信息 -->
+      <StackPanel Grid.Row="0">
+        <Border x:Name="UpdateBanner" IsVisible="False" Classes="card"
+                Margin="0,0,0,12" Padding="12,9" Background="{DynamicResource BrushInfoSoft}"
+                BorderBrush="{DynamicResource BrushInfoBorder}"
+                Cursor="Hand" PointerPressed="UpdateBanner_PointerPressed">
+          <TextBlock x:Name="TxtUpdate" TextWrapping="Wrap" FontSize="{DynamicResource FontSmall}"
+                     Foreground="{DynamicResource BrushInfoText}"
+                     LineHeight="20" Text=""/>
+        </Border>
+        <Border Classes="card">
+          <StackPanel>
+            <TextBlock x:Name="LblMelody" TextWrapping="Wrap" FontSize="{DynamicResource FontBody}" LineHeight="22"
+                       Text="打开 MIDI 文件，再在左侧点一行作为主旋律"/>
+            <TextBlock x:Name="LblWarn" TextWrapping="Wrap" FontSize="{DynamicResource FontSmall}" Margin="0,4,0,0" Text=""/>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <!-- 乐器方案：内置预设 + 自定义 -->
+      <Border Grid.Row="1" Classes="card" Margin="{DynamicResource CardGap}" Padding="14,10">
+        <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Text="乐器方案" Classes="label" VerticalAlignment="Center" Margin="0,0,8,0"
+                     ToolTip.Tip="决定 MIDI 音高落在哪个琴键上，以及输出方式。换游戏就换方案。"/>
+          <ComboBox Grid.Column="1" x:Name="ProfileCombo" HorizontalAlignment="Stretch"
+                    FontSize="{DynamicResource FontSmall}" VerticalAlignment="Center"
+                    SelectionChanged="Profile_Changed"
+                    ToolTip.Tip="内置方案覆盖常见的 7 / 14 / 15 / 21 键布局。想适配别的游戏就复制一份再改键。"/>
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0">
+            <Button x:Name="BtnEditProfile" Content="编辑键位…" FontSize="{DynamicResource FontSmall}"
+                    Padding="12,5" Classes="secondary" Click="BtnEditProfile_Click"
+                    ToolTip.Tip="打开方案编辑器：改琴键、改升半音方式、改输出时序"/>
+            <Button x:Name="BtnNewProfile" Content="新建" FontSize="{DynamicResource FontSmall}"
+                    Padding="10,5" Classes="secondary" Click="BtnNewProfile_Click"
+                    ToolTip.Tip="复制当前方案，改完另存为自己的方案"/>
+          </StackPanel>
+          <TextBlock Grid.Row="1" Grid.ColumnSpan="3" x:Name="TxtProfileInfo" Classes="caption"
+                     Margin="0,6,0,0" TextWrapping="Wrap" Text=""/>
+        </Grid>
+      </Border>
+
+      <!-- 状态区：字号/颜色由代码按状态切换。
+           居中用 TextAlignment（TextBlock 撑满卡片内宽再居中），长句才会正常换行。 -->
+      <Border Grid.Row="2" Classes="card" Margin="{DynamicResource CardGap}" Padding="16,14">
+        <TextBlock x:Name="LblStatus" FontSize="{DynamicResource FontDisplay}" FontWeight="Bold"
+                   Foreground="{DynamicResource BrushSuccess}"
+                   TextAlignment="Center" Text="" TextWrapping="Wrap"/>
+      </Border>
+
+      <Border Grid.Row="3" Classes="card" Margin="{DynamicResource CardGap}">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <!-- 卷帘编辑工具栏 -->
+          <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
+            <TextBlock Text="MIDI 编辑" Classes="sectionLabel" VerticalAlignment="Center"/>
+            <Button x:Name="BtnUndo" Content="撤销" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                    Classes="secondary" Click="Undo_Click" ToolTip.Tip="Ctrl+Z"/>
+            <Button x:Name="BtnRedo" Content="重做" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                    Classes="secondary" Click="Redo_Click" ToolTip.Tip="Ctrl+Y 或 Ctrl+Shift+Z"/>
+            <Button x:Name="BtnDeleteNote" Content="删除所选" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                    Classes="secondary" Click="DeleteNote_Click" ToolTip.Tip="也可以按 Delete 键，或右键点音符"/>
+            <Button x:Name="BtnResetEdits" Content="还原为自动" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                    Classes="secondary" Click="ResetEdits_Click" ToolTip.Tip="丢弃全部手动改动，回到自动提取的结果"/>
+            <CheckBox x:Name="ChkSnap" Content="吸附 0.1s" IsChecked="True" VerticalAlignment="Center"
+                      FontSize="{DynamicResource FontCaption}" IsCheckedChanged="Snap_Changed"
+                      ToolTip.Tip="拖动与加音按 0.1 秒对齐；关掉可以自由摆位"/>
+            <Button x:Name="BtnExportMidi" Content="导出 MIDI…" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                    Classes="secondary" Click="ExportMidi_Click"
+                    ToolTip.Tip="把当前谱面（含你的改动）写成标准 MIDI 文件"/>
+            <Border Width="1" Background="{DynamicResource BrushBorder}" Margin="4,4"/>
+            <Button x:Name="BtnZoomOut" Content="缩小" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                    Classes="secondary" Click="ZoomOut_Click" ToolTip.Tip="也可以滚轮向下"/>
+            <Button x:Name="BtnZoomIn" Content="放大" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                    Classes="secondary" Click="ZoomIn_Click" ToolTip.Tip="也可以滚轮向上；Shift+滚轮左右平移；中键拖动平移"/>
+            <Button x:Name="BtnZoomFit" Content="全曲" FontSize="{DynamicResource FontCaption}" Padding="10,3"
+                    Classes="secondary" Click="ZoomFit_Click" ToolTip.Tip="缩放到整首歌"/>
+          </StackPanel>
+          <!-- 卷帘：点空白=定位，双击空白=加音，拖音符=移动，拖右缘=改长度，右键=删音 -->
+          <local:PianoRoll x:Name="Roll" Grid.Row="1" MinHeight="72" Margin="0,0,0,10"
+                           ToolTip.Tip="点空白=定位；双击空白=加音；拖音符=移动；拖右缘=改长度；右键=删音"/>
+          <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto">
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+              <Button x:Name="BtnPlay" Content="▶ 演奏 (F6)" Click="BtnPlay_Click"
+                      Classes="accent" FontSize="{DynamicResource FontTitle}" Padding="20,8" IsEnabled="False"/>
+              <Button x:Name="BtnStop" Content="■ 停止" Click="BtnStop_Click"
+                      Classes="secondary" FontSize="{DynamicResource FontTitle}" Padding="20,8" IsEnabled="False"/>
+              <CheckBox x:Name="ChkLoop" Content="循环" VerticalAlignment="Center" FontSize="{DynamicResource FontBody}"/>
+            </StackPanel>
+            <Grid Grid.Column="1" ColumnDefinitions="*,Auto,Auto" Margin="16,0,0,0">
+              <Slider x:Name="SliderProgress" VerticalAlignment="Center" Margin="0,0,10,0"
+                      Minimum="0" Maximum="1" Value="0" IsEnabled="False"/>
+              <TextBlock Grid.Column="1" x:Name="TxtTime" Classes="value"
+                         VerticalAlignment="Center" Text="0.0 / 0.0 s"/>
+              <TextBlock Grid.Column="2" x:Name="TxtSeekNote" Classes="value" Margin="12,0,0,0"
+                         VerticalAlignment="Center" Text="—"/>
+            </Grid>
+            <TextBlock Grid.Column="2" x:Name="TxtHotHint" Classes="sectionLabel" VerticalAlignment="Center" Margin="12,0,0,0"
+                       Text="F6：开始 / 暂停 / 继续"/>
+          </Grid>
+        </Grid>
+      </Border>
+
+      <!-- 选项区：分三行，避免一个 WrapPanel 里堆十几个控件 -->
+      <StackPanel Grid.Row="4" Spacing="10" Margin="{DynamicResource CardGap}">
+
+        <!-- 第 1 行：演奏参数 -->
+        <Border Classes="card" Padding="14,10">
+          <WrapPanel ItemSpacing="22" LineSpacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="速度" Classes="label" MinWidth="34"/>
+              <Slider x:Name="SliderSpeed" Width="126" Minimum="50" Maximum="200" Value="100"
+                      TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="SpeedChanged"
+                      VerticalAlignment="Center"/>
+              <TextBlock x:Name="TxtSpeed" Text="100%" Classes="value" Width="40"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="移调" Classes="label" MinWidth="34"/>
+              <Slider x:Name="SliderTranspose" Width="126" Minimum="-24" Maximum="24" Value="0"
+                      TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SpeedChanged"
+                      VerticalAlignment="Center"/>
+              <TextBlock x:Name="TxtTranspose" Text="0" Classes="value" Width="36"/>
+            </StackPanel>
+
+            <Button x:Name="BtnAutoTranspose" Content="一键移调" FontSize="{DynamicResource FontSmall}"
+                    Padding="12,5" Classes="secondary" VerticalAlignment="Center"
+                    Click="BtnAutoTranspose_Click"
+                    ToolTip.Tip="自动移调，让所有音落进当前乐器方案的音域"/>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="倒计时" Classes="label" MinWidth="46"/>
+              <ComboBox x:Name="CountdownCombo" Width="104" FontSize="{DynamicResource FontSmall}" SelectedIndex="1"
+                        VerticalAlignment="Center" SelectionChanged="CountdownCombo_Changed"/>
+            </StackPanel>
+          </WrapPanel>
+        </Border>
+
+        <!-- 第 2 行：热键与导出 -->
+        <Border Classes="card" Padding="14,10">
+          <WrapPanel ItemSpacing="22" LineSpacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="控制热键" Classes="label"
+                         ToolTip.Tip="一个键四用：空闲=开始，演奏=暂停，暂停=继续，倒计时=取消"/>
+              <ComboBox x:Name="HotkeyControlCombo" Width="86" FontSize="{DynamicResource FontSmall}"
+                        VerticalAlignment="Center" SelectionChanged="Hotkey_Changed"
+                        ToolTip.Tip="默认 F6"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="后退热键" Classes="label"
+                         ToolTip.Tip="按一下后退 5 秒。演奏中跳转可能让游戏侧乐器卡音"/>
+              <ComboBox x:Name="HotkeyRewindCombo" Width="86" FontSize="{DynamicResource FontSmall}"
+                        VerticalAlignment="Center" SelectionChanged="Hotkey_Changed"
+                        ToolTip.Tip="默认 F5"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="前进热键" Classes="label"
+                         ToolTip.Tip="按一下前进 5 秒。演奏中跳转可能让游戏侧乐器卡音"/>
+              <ComboBox x:Name="HotkeyForwardCombo" Width="86" FontSize="{DynamicResource FontSmall}"
+                        VerticalAlignment="Center" SelectionChanged="Hotkey_Changed"
+                        ToolTip.Tip="默认 F7"/>
+            </StackPanel>
+
+            <Button x:Name="BtnExport" Content="导出按键表 ▾" FontSize="{DynamicResource FontSmall}"
+                    Padding="12,5" Classes="secondary" VerticalAlignment="Center" IsEnabled="False"
+                    ToolTip.Tip="导出按键时序，与实际演奏一致。不想常驻本程序时用这个">
+              <Button.Flyout>
+                <MenuFlyout Placement="Bottom">
+                  <MenuItem Header="AutoHotkey 脚本 (.ahk)" Click="ExportAhk_Click"/>
+                  <MenuItem Header="罗技 G HUB 脚本 (.lua)" Click="ExportGhub_Click"/>
+                  <MenuItem Header="通用 CSV (.csv)" Click="ExportCsv_Click"/>
+                </MenuFlyout>
+              </Button.Flyout>
+            </Button>
+          </WrapPanel>
+        </Border>
+
+        <!-- 第 3 行：其它选项 -->
+        <Border Classes="card" Padding="14,10">
+          <WrapPanel ItemSpacing="20" LineSpacing="6">
+            <CheckBox x:Name="ChkChordRoot" Content="自动提取主旋律" FontSize="{DynamicResource FontBody}"
+                      IsChecked="True" VerticalAlignment="Center"
+                      ToolTip.Tip="开：分出各声部，挑最像主旋律的一条。关：同刻多音直接交给下面的逻辑"
+                      IsCheckedChanged="Option_Changed"/>
+            <CheckBox x:Name="ChkVocalExtract" Content="人声旋律提取" FontSize="{DynamicResource FontBody}"
+                      IsChecked="False" VerticalAlignment="Center"
+                      ToolTip.Tip="伴奏与主唱同一轨时用：只在人声音区取音，过滤低音与和声"
+                      IsCheckedChanged="Option_Changed"/>
+            <CheckBox x:Name="ChkTrimLead" Content="去除开头空拍" FontSize="{DynamicResource FontBody}"
+                      IsChecked="True" VerticalAlignment="Center"
+                      ToolTip.Tip="剪掉开头的休止，让旋律从第 0 秒开始"
+                      IsCheckedChanged="Option_Changed"/>
+            <CheckBox x:Name="ChkBreath" Content="换气休止" FontSize="{DynamicResource FontBody}"
+                      IsChecked="False" VerticalAlignment="Center"
+                      ToolTip.Tip="长连奏时插入极短停顿，避免判定粘连"
+                      IsCheckedChanged="Breath_Changed"/>
+            <CheckBox x:Name="ChkAutoMinimize" Content="演奏后自动最小化窗口" FontSize="{DynamicResource FontBody}"
+                      IsChecked="True" VerticalAlignment="Center"
+                      ToolTip.Tip="演奏开始后窗口最小化。不勾选则保持原样（副屏看进度用，记得点一下游戏画面）"
+                      IsCheckedChanged="AutoMinimize_Changed"/>
+          </WrapPanel>
+        </Border>
+      </StackPanel>
+    </Grid>
+  </DockPanel>
+
+  <!-- 首次启动浮层，点「知道了」后不再弹出 -->
+  <Border x:Name="QuickStartOverlay" IsVisible="False" Background="#66101828" CornerRadius="0">
+    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="620" Margin="24">
+      <Border Classes="card" Padding="26,22">
+        <StackPanel Spacing="10">
+          <TextBlock Text="快速上手（只显示一次）" FontSize="18" FontWeight="Bold"/>
+          <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource FontBody}" LineHeight="22">
+            <Run FontWeight="Bold" Text="① 选乐器方案"/><Run Text="：右上角选一个和你游戏乐器一致的键位方案。没有就点「新建」，改完另存；"/>
+          </TextBlock>
+          <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource FontBody}" LineHeight="22">
+            <Run FontWeight="Bold" Text="② 打开 MIDI"/><Run Text="：点「打开 MIDI 文件…」。绿点是推荐的主旋律轨，点其它行可换；"/>
+          </TextBlock>
+          <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource FontBody}" LineHeight="22">
+            <Run FontWeight="Bold" Text="③ 开始"/><Run Text="：点「▶ 演奏」或按 F6，在倒计时结束前切到游戏并打开乐器；"/>
+          </TextBlock>
+          <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource FontBody}" LineHeight="22">
+            <Run FontWeight="Bold" Text="④ 暂停 / 继续"/><Run Text="：只用 F6。空闲=开始，演奏=暂停，暂停=继续。"/>
+          </TextBlock>
+          <Border Background="{DynamicResource BrushWarnSoft}" BorderBrush="{DynamicResource BrushWarnBorder}"
+                  BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,4,0,0">
+            <StackPanel Spacing="4">
+              <TextBlock Text="注意：" FontWeight="Bold" FontSize="{DynamicResource FontBody}" Foreground="{DynamicResource BrushWarn}"/>
+              <TextBlock Text="· 游戏用窗口化，不要用全屏独占" FontSize="{DynamicResource FontBody}"/>
+              <TextBlock Text="· 输入法切英文；人物原地站好再开始" FontSize="{DynamicResource FontBody}"/>
+              <TextBlock Text="· 没反应先点一下游戏画面；游戏用管理员时本程序也要用管理员" FontSize="{DynamicResource FontBody}"/>
+              <TextBlock Text="· 漏音就去「编辑键位…」把时序放宽，或把输入兼容选成「稳健」" FontSize="{DynamicResource FontBody}"/>
+            </StackPanel>
+          </Border>
+          <Button x:Name="BtnQuickStartOk" Content="知道了，开始使用" Classes="accent"
+                  HorizontalAlignment="Right" Padding="18,8" FontSize="{DynamicResource FontTitle}" Margin="0,6,0,0"
+                  Click="QuickStartOk_Click"/>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </Border>
+</Grid>
+</Window>

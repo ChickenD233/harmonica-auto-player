@@ -1,0 +1,251 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="GameInstrumentPlayer.ProfileEditorWindow"
+        Title="乐器方案编辑器"
+        Width="880" Height="700"
+        MinWidth="760" MinHeight="560"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BrushCanvas}"
+        FontFamily="{DynamicResource FontUi}">
+
+  <Window.Styles>
+    <Style Selector="Window TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource BrushText}"/>
+    </Style>
+    <Style Selector="Window Button">
+      <Setter Property="Foreground" Value="{DynamicResource BrushText}"/>
+    </Style>
+    <Style Selector="Window CheckBox">
+      <Setter Property="Foreground" Value="{DynamicResource BrushText}"/>
+    </Style>
+    <Style Selector="Window TextBlock.sectionLabel">
+      <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}"/>
+    </Style>
+    <Style Selector="Window TextBlock.caption">
+      <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+    </Style>
+    <Style Selector="Window Button.accent">
+      <Setter Property="Foreground" Value="{DynamicResource BrushOnAccent}"/>
+    </Style>
+  </Window.Styles>
+
+  <DockPanel Margin="14">
+
+    <!-- 底部按钮 -->
+    <Border DockPanel.Dock="Bottom" Margin="0,10,0,0">
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto">
+        <TextBlock x:Name="TxtStatus" VerticalAlignment="Center" TextWrapping="Wrap"
+                   FontSize="{DynamicResource FontSmall}" Foreground="{DynamicResource BrushWarn}" Text=""/>
+        <Button Grid.Column="1" x:Name="BtnImport" Content="导入…" Padding="12,6" Classes="secondary"
+                FontSize="{DynamicResource FontSmall}" Click="BtnImport_Click"
+                ToolTip.Tip="从别人分享的 JSON 方案文件读入"/>
+        <Button Grid.Column="2" x:Name="BtnExport" Content="导出…" Padding="12,6" Classes="secondary"
+                FontSize="{DynamicResource FontSmall}" Margin="6,0,0,0" Click="BtnExport_Click"
+                ToolTip.Tip="把当前方案写成 JSON，方便备份与分享"/>
+        <Button Grid.Column="3" x:Name="BtnTest" Content="试按键" Padding="12,6" Classes="secondary"
+                FontSize="{DynamicResource FontSmall}" Margin="6,0,0,0" Click="BtnTest_Click"
+                ToolTip.Tip="按顺序发一遍当前方案的琴键，用来确认游戏认不认这些键"/>
+        <Button Grid.Column="4" x:Name="BtnDelete" Content="删除方案" Padding="12,6" Classes="secondary"
+                FontSize="{DynamicResource FontSmall}" Margin="6,0,0,0" Click="BtnDelete_Click"
+                ToolTip.Tip="只删自建方案"/>
+        <Button Grid.Column="5" x:Name="BtnCancel" Content="取消" Padding="16,6" Classes="secondary"
+                FontSize="{DynamicResource FontSmall}" Margin="6,0,0,0" Click="BtnCancel_Click"/>
+        <Button Grid.Column="6" x:Name="BtnSave" Content="保存方案" Padding="18,6" Classes="accent"
+                FontSize="{DynamicResource FontSmall}" Margin="6,0,0,0" Click="BtnSave_Click"/>
+      </Grid>
+    </Border>
+
+    <!-- 顶部：名称与说明 -->
+    <Border DockPanel.Dock="Top" Classes="card" Padding="14,10">
+      <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
+        <TextBlock Text="方案名称" Classes="label" VerticalAlignment="Center" Margin="0,0,8,0"/>
+        <TextBox Grid.Column="1" x:Name="TxtName" FontSize="{DynamicResource FontSmall}"
+                 VerticalAlignment="Center" Watermark="给方案起个名字"/>
+        <TextBlock Grid.Row="1" Grid.ColumnSpan="3" x:Name="TxtHint" Classes="caption"
+                   Margin="0,8,0,0" TextWrapping="Wrap" Text=""/>
+      </Grid>
+    </Border>
+
+    <TabControl Margin="0,10,0,0">
+
+      <!-- ===================== 键位 ===================== -->
+      <TabItem Header="键位">
+        <ScrollViewer>
+          <StackPanel Spacing="10" Margin="2,10,2,2">
+
+            <Border Classes="card" Padding="14,10">
+              <StackPanel Spacing="8">
+                <WrapPanel ItemSpacing="18" LineSpacing="8">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="每行音数" Classes="label" VerticalAlignment="Center"/>
+                    <NumericUpDown x:Name="NumPerRow" Minimum="1" Maximum="12" Increment="1"
+                                   Width="100" FontSize="{DynamicResource FontSmall}"
+                                   ValueChanged="PerRow_Changed"
+                                   ToolTip.Tip="一行有几个琴键。多数游戏是 7（do..ti）"/>
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="基准音高" Classes="label" VerticalAlignment="Center"/>
+                    <NumericUpDown x:Name="NumBasePitch" Minimum="0" Maximum="127" Increment="12"
+                                   Width="110" FontSize="{DynamicResource FontSmall}"
+                                   ValueChanged="BasePitch_Changed"
+                                   ToolTip.Tip="第一行第一个琴键对应的 MIDI 音高。60 = C4"/>
+                  </StackPanel>
+                  <TextBlock x:Name="TxtBaseName" Classes="caption" VerticalAlignment="Center"/>
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="音级" Classes="label" VerticalAlignment="Center"
+                               ToolTip.Tip="每个琴键比行首高几个半音。默认自然大调 0 2 4 5 7 9 11"/>
+                    <TextBox x:Name="TxtOffsets" Width="200" FontSize="{DynamicResource FontSmall}"
+                             VerticalAlignment="Center" TextChanged="Offsets_Changed"/>
+                  </StackPanel>
+                </WrapPanel>
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="音级写法：用空格或逗号分隔的半音数，0 = do。半音齐全的乐器用 0 1 2 3 4 5 6 7 8 9 10 11；五声音阶用 0 2 4 7 9。"/>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="card" Padding="14,10">
+              <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="Auto,*">
+                  <TextBlock Text="琴键布局" Classes="sectionLabel" VerticalAlignment="Center"/>
+                  <Button Grid.Column="1" x:Name="BtnAddRow" Content="+ 加一行" FontSize="{DynamicResource FontCaption}"
+                          Padding="10,3" Classes="secondary" HorizontalAlignment="Left" Margin="12,0,0,0"
+                          Click="BtnAddRow_Click" ToolTip.Tip="多加一行 = 多一个八度"/>
+                </Grid>
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="点任意格子改键。格子里的「无」表示这个位置没有琴键，超出这一行的音会自动归到最后一个键。"/>
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                  <StackPanel x:Name="RowsPanel" Spacing="6"/>
+                </ScrollViewer>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="card" Padding="14,10">
+              <StackPanel Spacing="8">
+                <TextBlock Text="升半音（# 音）怎么办" Classes="sectionLabel"/>
+                <WrapPanel ItemSpacing="18" LineSpacing="8">
+                  <ComboBox x:Name="ComboSharp" Width="190" FontSize="{DynamicResource FontSmall}"
+                            VerticalAlignment="Center" SelectionChanged="Sharp_Changed"/>
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="修饰键" Classes="label" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="ComboSharpMod" Width="130" FontSize="{DynamicResource FontSmall}"
+                              VerticalAlignment="Center" SelectionChanged="SharpMod_Changed"/>
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="换到哪一行" Classes="label" VerticalAlignment="Center"/>
+                    <NumericUpDown x:Name="NumSharpRow" Minimum="-3" Maximum="3" Increment="1" Width="90"
+                                   FontSize="{DynamicResource FontSmall}" ValueChanged="SharpRow_Changed"/>
+                  </StackPanel>
+                </WrapPanel>
+                <TextBlock x:Name="TxtSharpHint" Classes="caption" TextWrapping="Wrap" Text=""/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ===================== 输出与时序 ===================== -->
+      <TabItem Header="输出与时序">
+        <ScrollViewer>
+          <StackPanel Spacing="10" Margin="2,10,2,2">
+
+            <Border Classes="card" Padding="14,10">
+              <StackPanel Spacing="8">
+                <TextBlock Text="输出方式" Classes="sectionLabel"/>
+                <WrapPanel ItemSpacing="18" LineSpacing="8">
+                  <ComboBox x:Name="ComboOutput" Width="230" FontSize="{DynamicResource FontSmall}"
+                            VerticalAlignment="Center" SelectionChanged="Output_Changed"/>
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="自动选八度范围" Classes="label" VerticalAlignment="Center"
+                               ToolTip.Tip="自动把整首旋律上下移几个八度去找最合适的琴键，最多移几个八度"/>
+                    <NumericUpDown x:Name="NumAutoRange" Minimum="0" Maximum="3" Increment="1" Width="90"
+                                   FontSize="{DynamicResource FontSmall}" ValueChanged="AutoRange_Changed"/>
+                  </StackPanel>
+                </WrapPanel>
+                <TextBlock x:Name="TxtOutputHint" Classes="caption" TextWrapping="Wrap" Text=""/>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="card" Padding="14,10">
+              <StackPanel Spacing="8">
+                <TextBlock Text="按键时序（毫秒，物理时间，不随速度变化）" Classes="sectionLabel"/>
+                <WrapPanel ItemSpacing="18" LineSpacing="8">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="按住最短" Classes="label" VerticalAlignment="Center"
+                               ToolTip.Tip="一个键最少按多久。小于一帧会被游戏漏掉"/>
+                    <NumericUpDown x:Name="NumHold" Minimum="5" Maximum="500" Increment="5" Width="100"
+                                   FontSize="{DynamicResource FontSmall}" ValueChanged="Timing_Changed"/>
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="同键重触发" Classes="label" VerticalAlignment="Center"
+                               ToolTip.Tip="同一个键两次按下之间最少隔多久"/>
+                    <NumericUpDown x:Name="NumRetrigger" Minimum="5" Maximum="500" Increment="5" Width="100"
+                                   FontSize="{DynamicResource FontSmall}" ValueChanged="Timing_Changed"/>
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="修饰键提前" Classes="label" VerticalAlignment="Center"
+                               ToolTip.Tip="修饰键要比琴键早按多久，游戏才能采样到"/>
+                    <NumericUpDown x:Name="NumModLead" Minimum="0" Maximum="500" Increment="5" Width="100"
+                                   FontSize="{DynamicResource FontSmall}" ValueChanged="Timing_Changed"/>
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="抬起→按下" Classes="label" VerticalAlignment="Center"
+                               ToolTip.Tip="前一个键松开到后一个键按下之间最少隔多久"/>
+                    <NumericUpDown x:Name="NumGap" Minimum="0" Maximum="500" Increment="5" Width="100"
+                                   FontSize="{DynamicResource FontSmall}" ValueChanged="Timing_Changed"/>
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="游戏帧长" Classes="label" VerticalAlignment="Center"
+                               ToolTip.Tip="游戏多少毫秒采样一次按键。60fps ≈ 17，30fps ≈ 33"/>
+                    <NumericUpDown x:Name="NumFrame" Minimum="1" Maximum="100" Increment="1" Width="100"
+                                   FontSize="{DynamicResource FontSmall}" ValueChanged="Timing_Changed"/>
+                  </StackPanel>
+                </WrapPanel>
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="漏音、粘连、音高错，多半是这里的余量不够。先加大「修饰键提前」和「按住最短」，仍然漏就加大「游戏帧长」。"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ===================== 帮助 ===================== -->
+      <TabItem Header="怎么适配一个游戏">
+        <ScrollViewer>
+          <StackPanel Spacing="10" Margin="2,10,2,2">
+            <Border Classes="card" Padding="16,12">
+              <StackPanel Spacing="8">
+                <TextBlock Text="三步做出一套能用的方案" FontWeight="Bold" FontSize="{DynamicResource FontBody}"/>
+                <TextBlock TextWrapping="Wrap" LineHeight="22" FontSize="{DynamicResource FontSmall}"
+                           Text="1. 在游戏里打开乐器，把琴键界面截图（或看游戏设置里的键位说明）。"/>
+                <TextBlock TextWrapping="Wrap" LineHeight="22" FontSize="{DynamicResource FontSmall}"
+                           Text="2. 回到本页，按游戏里的实际位置，把每个格子改成对应的键。一行 = 一个八度。"/>
+                <TextBlock TextWrapping="Wrap" LineHeight="22" FontSize="{DynamicResource FontSmall}"
+                           Text="3. 点「试按键」，确认游戏能收到；再点「保存方案」。"/>
+              </StackPanel>
+            </Border>
+            <Border Classes="card" Padding="16,12">
+              <StackPanel Spacing="8">
+                <TextBlock Text="常见乐器的键位规律" FontWeight="Bold" FontSize="{DynamicResource FontBody}"/>
+                <TextBlock TextWrapping="Wrap" LineHeight="22" FontSize="{DynamicResource FontSmall}"
+                           Text="· 21 键：三行，通常是 Z-M / A-J / Q-U，每个八度一行。"/>
+                <TextBlock TextWrapping="Wrap" LineHeight="22" FontSize="{DynamicResource FontSmall}"
+                           Text="· 15 键：两行，Z-M 和 Q-U。"/>
+                <TextBlock TextWrapping="Wrap" LineHeight="22" FontSize="{DynamicResource FontSmall}"
+                           Text="· 只有自然音的乐器：把「升半音」设成「自动降到最近的音」，或让程序跳过。"/>
+                <TextBlock TextWrapping="Wrap" LineHeight="22" FontSize="{DynamicResource FontSmall}"
+                           Text="· 半音在另一行的乐器：把「升半音」设成「换到相邻八度行」。"/>
+              </StackPanel>
+            </Border>
+            <Border Classes="card" Padding="16,12">
+              <StackPanel Spacing="8">
+                <TextBlock Text="方案文件放哪里" FontWeight="Bold" FontSize="{DynamicResource FontBody}"/>
+                <TextBlock x:Name="TxtDir" TextWrapping="Wrap" LineHeight="22"
+                           FontSize="{DynamicResource FontSmall}" Text=""/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+    </TabControl>
+  </DockPanel>
+</Window>

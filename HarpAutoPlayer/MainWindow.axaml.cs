@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Selection;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -155,6 +156,7 @@ public partial class MainWindow : Window
         SetIdleHint();
         UpdateTransportUi();
         _uiReady = true;
+        RefreshRecentList();   // 启动时按最近打开列表是否存在，摆好“最近打开”按钮
 
         // 启动即自检，状态行从一开始就有结论
         RunPreflight();
@@ -171,6 +173,7 @@ public partial class MainWindow : Window
             Opened += (_, _) => EnsureTray();
         }
         Opened += (_, _) => ShowQuickStartOnce();
+        Opened += (_, _) => AutoRestoreLastMidi();   // 音频记录：自动载入上次打开的 MIDI
 
         InstallDevSnapshot(this);   // 【开发用，可删】设了 HARP_UI_SNAPSHOT 才生效，见 DevUISnapshot.cs
     }
@@ -968,43 +971,144 @@ public partial class MainWindow : Window
             var path = files[0].TryGetLocalPath();
             if (string.IsNullOrEmpty(path)) return;
 
-            // 暂停/播放中也能换歌：先停掉当前播放，避免新旧串曲
-            StopPlaybackForNewFile();
-
-            try
-            {
-                var parsed = MidiLoader.Parse(path);
-                _parsed = parsed;
-                _tracks.Clear();
-                _mixOrder.Clear();
-                foreach (var c in parsed.Candidates) _tracks.Add(new TrackRowVM(c));
-
-                LblFile.Text = System.IO.Path.GetFileName(path);
-                InsertLog($"已载入 {System.IO.Path.GetFileName(path)}：{parsed.Candidates.Count} 个候选，时长 ≈ {parsed.DurationSec:F1}s");
-
-                _selected = null;
-                _previewSeconds = 0;      // 换歌必须回到 0，否则上一首的位置会夹到新曲末尾 → 一播放就结束
-                Roll.FitAll();
-                ResetEdits();
-                ChooseRecommendedTrack();
-                RefreshPreview();
-            }
-            catch (Exception ex)
-            {
-                var parts = new List<string>();
-                Exception? inner = ex;
-                while (inner != null)
-                {
-                    parts.Add($"{inner.GetType().Name}: {inner.Message}");
-                    inner = inner.InnerException;
-                }
-                InsertLog($"载入失败：{path}");
-                InsertLog($"  原因：{string.Join("  <-  ", parts)}（错误码 0x{ex.HResult:X8}）");
-            }
+            // 真正载入（含“记录上次文件”）；换歌 / 首次都走这一条
+            OpenMidiPath(path);
         }
         catch (Exception ex)
         {
             InsertLog($"打开文件对话框失败：{ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 从给定路径载入 MIDI，并把它记入“最近打开”列表（最多保留 AppConfig.MaxRecent 条）。
+    /// 下次启动会自动重新载入最近的一首，无需再用文件对话框挑选（音频记录功能）。
+    /// 返回是否成功载入。
+    /// </summary>
+    private bool OpenMidiPath(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return false;
+
+        // 暂停/播放中也能换歌：先停掉当前播放，避免新旧串曲
+        StopPlaybackForNewFile();
+
+        try
+        {
+            var parsed = MidiLoader.Parse(path);
+            _parsed = parsed;
+            _tracks.Clear();
+            _mixOrder.Clear();
+            foreach (var c in parsed.Candidates) _tracks.Add(new TrackRowVM(c));
+
+            LblFile.Text = System.IO.Path.GetFileName(path);
+            InsertLog($"已载入 {System.IO.Path.GetFileName(path)}：{parsed.Candidates.Count} 个候选，时长 ≈ {parsed.DurationSec:F1}s");
+
+            _selected = null;
+            _previewSeconds = 0;      // 换歌必须回到 0，否则上一首的位置会夹到新曲末尾 → 一播放就结束
+            Roll.FitAll();
+            ResetEdits();
+            ChooseRecommendedTrack();
+            RefreshPreview();
+
+            // —— 音频记录：把这次选的文件记入最近打开列表，下次启动自动载入 ——
+            _cfg.PushRecent(path);
+            _cfg.Save();
+            RefreshRecentList();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            var parts = new List<string>();
+            Exception? inner = ex;
+            while (inner != null)
+            {
+                parts.Add($"{inner.GetType().Name}: {inner.Message}");
+                inner = inner.InnerException;
+            }
+            InsertLog($"载入失败：{path}");
+            InsertLog($"  原因：{string.Join("  <-  ", parts)}（错误码 0x{ex.HResult:X8}）");
+            RefreshRecentList();
+            return false;
+        }
+    }
+
+    /// <summary>“最近打开”按钮：弹出最近打开的 MIDI 列表，点一项即重新载入。</summary>
+    private void BtnRecent_Click(object? sender, RoutedEventArgs e)
+    {
+        if (BtnRecent == null) return;
+        FlyoutBase.ShowAttachedFlyout(BtnRecent);
+    }
+
+    /// <summary>清空“最近打开”列表。</summary>
+    private void ClearRecent()
+    {
+        _cfg.RecentMidiPaths.Clear();
+        _cfg.Save();
+        RefreshRecentList();
+        InsertLog("已清空最近打开记录。");
+    }
+
+    /// <summary>根据最近打开列表重建弹出菜单，并摆好“最近打开”按钮的可用性与提示。</summary>
+    private void RefreshRecentList()
+    {
+        if (BtnRecent == null) return;
+        var paths = _cfg.RecentMidiPaths ?? new List<string>();
+        BtnRecent.IsEnabled = paths.Count > 0;
+        ToolTip.SetTip(BtnRecent, paths.Count > 0 ? "点击打开最近打开的列表" : "还没有记录的文件");
+
+        var flyout = new MenuFlyout();
+        if (paths.Count == 0)
+        {
+            flyout.Items.Add(new MenuItem { Header = "（暂无记录）", IsEnabled = false });
+        }
+        else
+        {
+            int shown = 0;
+            foreach (var p in paths)
+            {
+                bool exists = System.IO.File.Exists(p);
+                var name = System.IO.Path.GetFileName(p);
+                var item = new MenuItem { Header = name };
+                ToolTip.SetTip(item, exists ? p : $"{p}（文件已不在）");
+                if (exists)
+                {
+                    string captured = p;
+                    item.Click += (_, _) => OpenMidiPath(captured);
+                }
+                else
+                {
+                    item.IsEnabled = false;
+                }
+                flyout.Items.Add(item);
+                if (++shown >= AppConfig.MaxRecent) break;
+            }
+            flyout.Items.Add(new Separator());
+            var clear = new MenuItem { Header = "清空记录" };
+            clear.Click += (_, _) => ClearRecent();
+            flyout.Items.Add(clear);
+        }
+        FlyoutBase.SetAttachedFlyout(BtnRecent, flyout);
+    }
+
+    /// <summary>启动后自动载入最近打开且仍然存在的一首；若全部丢失则清掉死记录。</summary>
+    private void AutoRestoreLastMidi()
+    {
+        if (_cfg == null || _cfg.RecentMidiPaths == null) return;
+        foreach (var p in _cfg.RecentMidiPaths)
+        {
+            if (!string.IsNullOrEmpty(p) && System.IO.File.Exists(p))
+            {
+                InsertLog("正在自动载入上次使用的文件…");
+                OpenMidiPath(p);
+                return;
+            }
+        }
+        // 全部丢失：清掉死记录
+        if (_cfg.RecentMidiPaths.Count > 0)
+        {
+            _cfg.RecentMidiPaths.Clear();
+            _cfg.Save();
+            RefreshRecentList();
         }
     }
 

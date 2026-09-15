@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -24,6 +26,22 @@ public sealed class AppConfig
     public int MidiBaseOctave { get; set; } = 4;         // 基准八度（口琴中音 do 所在的 MIDI 八度）
     public int MidiMinVelocity { get; set; } = 1;        // 力度下限（1 = 不过滤）
     public bool MidiAutoFit { get; set; } = true;        // 自动贴合音域
+
+    // —— 音频记录（记住最近打开过的 MIDI，下次启动自动载入最近的一首，不必重新挑选）——
+    public List<string> RecentMidiPaths { get; set; } = new();   // 最近打开的 MIDI 路径（最新在前，最多 MaxRecent 条）
+
+    /// <summary>最近记录保留上限（最多 12 条）。</summary>
+    public const int MaxRecent = 12;
+
+    /// <summary>把刚打开的文件放到最前；去重、截到 MaxRecent 条。</summary>
+    public void PushRecent(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        var list = RecentMidiPaths ??= new List<string>();
+        list.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
+        list.Insert(0, path);
+        if (list.Count > MaxRecent) list.RemoveRange(MaxRecent, list.Count - MaxRecent);
+    }
 
     private static string DirPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HarpAutoPlayer");

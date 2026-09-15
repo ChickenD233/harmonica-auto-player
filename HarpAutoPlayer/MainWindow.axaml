@@ -74,14 +74,17 @@
     <Grid Width="440" RowDefinitions="Auto,*" DockPanel.Dock="Left" Margin="0,0,12,0">
 
       <Border Grid.Row="0" Classes="card">
-        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
+        <Grid ColumnDefinitions="Auto,Auto,*" RowDefinitions="Auto,Auto">
           <!-- 首要操作，给足视觉重量 -->
           <Button x:Name="BtnOpen" Content="打开 MIDI 文件…" Click="BtnOpen_Click"
                   Classes="accent" Padding="14,7" FontSize="{DynamicResource FontBody}"/>
-          <TextBlock Grid.Column="1" x:Name="LblFile" VerticalAlignment="Center"
+          <Button x:Name="BtnRecent" Grid.Column="1" Content="最近打开" Click="BtnRecent_Click"
+                  Margin="8,0,0,0" Padding="10,7" FontSize="{DynamicResource FontBody}"
+                  IsEnabled="False" ToolTip.Tip="还没有记录的文件"/>
+          <TextBlock Grid.Column="2" x:Name="LblFile" VerticalAlignment="Center"
                      Margin="12,0,0,0" Text="未选择文件" Classes="caption"
                      TextTrimming="CharacterEllipsis"/>
-          <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Classes="sectionLabel" Margin="0,8,0,0"
+          <TextBlock Grid.Row="1" Grid.ColumnSpan="3" Classes="sectionLabel" Margin="0,8,0,0"
                      Text="支持 .mid / .midi / .kar / .rmi"/>
         </Grid>
       </Border>
